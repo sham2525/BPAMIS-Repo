@@ -1,15 +1,114 @@
 <?php
 session_start();
+include '../server/server.php';
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: ../bpamis_website/login.php");
+    exit();
+}
+
+$external_id = $_SESSION['user_id'];
+$full_name = "External Complainant";
+
+// Get full name
+$stmt = $conn->prepare("SELECT first_name, last_name FROM external_complainant WHERE external_complaint_id = ?");
+$stmt->bind_param("i", $external_id);
+$stmt->execute();
+$result = $stmt->get_result();
+if ($result && $result->num_rows === 1) {
+    $row = $result->fetch_assoc();
+    $full_name = $row['first_name'] . ' ' . $row['last_name'];
+}
+
+// Count Complaints
+$complaintsCount = $conn->query("SELECT COUNT(*) AS total FROM complaint_info WHERE external_complainant_id = $external_id")->fetch_assoc()['total'] ?? 0;
+
+// Count Cases via complaint_info
+$casesCount = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM case_info ci 
+    JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID 
+    WHERE co.external_complainant_id = $external_id
+")->fetch_assoc()['total'] ?? 0;
+
+// Pending Complaints
+$pendingComplaints = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM complaint_info 
+    WHERE external_complainant_id = $external_id AND LOWER(TRIM(Status)) = 'pending'
+")->fetch_assoc()['total'] ?? 0;
+
+
+// Resolved Cases
+$resolvedCases = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM case_info ci 
+    JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID 
+    WHERE co.external_complainant_id = $external_id AND Case_Status = 'Resolved'
+")->fetch_assoc()['total'] ?? 0;
+
+// Pending Cases
+$pendingCases = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM case_info ci 
+    JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID 
+    WHERE co.external_complainant_id = $external_id AND Case_Status = 'Pending'
+")->fetch_assoc()['total'] ?? 0;
+
+$resolutionCases = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM case_info ci 
+    JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID 
+    WHERE co.external_complainant_id = $external_id AND Case_Status = 'resolution'
+")->fetch_assoc()['total'] ?? 0;
+
+$mediationCases = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM case_info ci 
+    JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID 
+    WHERE co.external_complainant_id = $external_id AND Case_Status = 'mediation'
+")->fetch_assoc()['total'] ?? 0;
+
+$settlementCases = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM case_info ci 
+    JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID 
+    WHERE co.external_complainant_id = $external_id AND Case_Status = 'settlement'
+")->fetch_assoc()['total'] ?? 0;
+
+// Scheduled Hearings
+$scheduledHearings = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM schedule_list sl
+    JOIN case_info ci ON sl.Case_ID = ci.Case_ID
+    JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID
+    WHERE co.external_complainant_id = $external_id
+")->fetch_assoc()['total'] ?? 0;
+
+// Open Cases
+$openCases = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM case_info ci 
+    JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID 
+    WHERE co.external_complainant_id = $external_id AND Case_Status = 'open'
+")->fetch_assoc()['total'] ?? 0;
+
+// Percentages (guard divisions)
+$pendingComplaintsPercent = $complaintsCount ? round(($pendingComplaints / $complaintsCount) * 100) : 0;
+$caseResolvedPercent = $casesCount ? round(($resolvedCases / $casesCount) * 100) : 0;
+$hearingPercent = $casesCount ? min(100, round(($scheduledHearings / max($casesCount,1)) * 100)) : 0;
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>External Complainant Dashboard</title>
+   <title> External Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/js/all.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+    <script src="tailwind.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -42,6 +141,18 @@ session_start();
         }
     </script>
     <style>
+    body { background: radial-gradient(circle at 20% 20%, #e0f2ff 0%, #f5f9ff 50%, #ffffff 100%); }
+    .orb { position:absolute; border-radius:50%; filter:blur(40px); opacity:.55; mix-blend-mode:multiply; }
+    .orb.one { width:480px; height:480px; background:linear-gradient(135deg,#0c9ced,#7cccfd); top:-140px; right:-120px; animation:float 14s ease-in-out infinite; }
+    .orb.two { width:360px; height:360px; background:linear-gradient(135deg,#bae2fd,#e0effe); bottom:-120px; left:-100px; animation:float 11s ease-in-out reverse infinite; }
+    .glass { backdrop-filter:blur(14px); background:linear-gradient(135deg,rgba(255,255,255,.65),rgba(255,255,255,.35)); border:1px solid rgba(255,255,255,.45); box-shadow:0 10px 40px -12px rgba(12,156,237,.25),0 4px 18px -6px rgba(12,156,237,.18); }
+    .section-label { font-size:.65rem; letter-spacing:.09em; font-weight:600; text-transform:uppercase; color:#0369a1; }
+    .progress-wrap { height:12px; }
+    .progress-bar { transition: width 1s cubic-bezier(.4,.0,.2,1); }
+    .quick-btn { position:relative; overflow:hidden; transition:.35s; }
+    .quick-btn:before { content:""; position:absolute; inset:0; background:linear-gradient(120deg,rgba(255,255,255,.6),rgba(255,255,255,0)); opacity:0; transition:opacity .5s; }
+    .quick-btn:hover:before { opacity:1; }
+    .quick-btn:hover { transform:translateY(-4px); }
         .gradient-bg {
             background: linear-gradient(to right, #f0f7ff, #e0effe);
         }
@@ -62,6 +173,10 @@ session_start();
             --fc-event-border-radius: 6px;
             --fc-small-font-size: 0.75rem;
         }
+
+          .fc-daygrid-event-dot { /* the actual dot */
+  margin-left: 50px;
+  }
         
         .calendar-container .fc-theme-standard th {
             padding: 12px 0;
@@ -393,127 +508,126 @@ session_start();
         }
     </style>
 </head>
-<body class="bg-gray-50 font-sans">    
-    <?php include_once('../includes/external_nav.php'); ?>
-      <!-- Welcome Banner -->
-    <section class="container mx-auto mt-10 px-4">
-        <div class="gradient-bg rounded-2xl shadow-sm p-8 md:p-12 relative overflow-hidden">
-            <div class="absolute top-0 right-0 w-64 h-64 bg-primary-100 rounded-full -mr-20 -mt-20 opacity-70"></div>
-            <div class="absolute bottom-0 left-0 w-40 h-40 bg-primary-200 rounded-full -ml-10 -mb-10 opacity-60"></div>
-            <div class="relative z-10">
-                <h2 class="text-3xl font-light text-primary-800">Welcome, <span class="font-medium">External Complainant</span></h2>
-                <p class="mt-3 text-gray-600 max-w-md">Easily manage your complaints and track case statuses through this streamlined dashboard.</p>
-            </div>
-        </div>
-    </section>
+<body class="font-sans text-gray-700 relative overflow-x-hidden">
+    <div class="orb one"></div>
+    <div class="orb two"></div>
 
-    <!-- Quick Actions -->
-    <div class="container mx-auto mt-8 px-4">
-        <h3 class="text-lg font-medium text-gray-700 mb-4 px-2">Quick Actions</h3>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <a href="view_complaints.php" class="card-hover flex items-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
-                <div class="bg-blue-50 p-3 rounded-lg mr-4">
-                    <i class="fas fa-clipboard-list text-primary-600 text-lg"></i>
+    <?php include_once('../includes/external_nav.php'); ?>
+
+    <!-- HERO / INTRO -->
+    <div class="max-w-7xl mx-auto px-5 pt-10 relative">
+        <div class="glass rounded-3xl p-8 md:p-12 overflow-hidden fade-in">
+            <div class="absolute inset-0 pointer-events-none">
+                <div class="absolute -top-20 -right-10 w-80 h-80 bg-gradient-to-br from-primary-200/70 to-primary-400/40 rounded-full blur-3xl opacity-60"></div>
+                <div class="absolute -bottom-24 -left-10 w-72 h-72 bg-gradient-to-tr from-primary-100/60 via-white/40 to-primary-300/40 rounded-full blur-3xl"></div>
+            </div>
+            <div class="relative z-10">
+                <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+                    <div>
+                        <p class="section-label mb-2">External Complainant</p>
+                        <h1 class="text-3xl md:text-4xl font-semibold tracking-tight text-sky-900">Welcome<span class="font-light">,</span></h1>
+                        <p class="mt-2 text-sky-800 text-lg font-medium"><?= htmlspecialchars($full_name) ?></p>
+                        <p class="mt-3 max-w-xl text-sm md:text-base text-sky-700/80">Track your filed complaints, monitor hearings and stay updated on case progress in real time.</p>
+                    </div>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4 w-full md:w-auto">
+                        <a href="submit_complaints.php" class="quick-btn glass group rounded-xl px-4 py-3 flex flex-col items-start gap-1 hover:shadow-lg transition">
+                            <div class="flex items-center gap-2 text-sky-700"><i class="fa-solid fa-square-plus text-sky-600"></i><span class="text-xs font-semibold tracking-wide uppercase">New</span></div>
+                            <span class="text-[13px] font-medium text-sky-900">Complaint</span>
+                        </a>
+                        <a href="view_complaints.php" class="quick-btn glass group rounded-xl px-4 py-3 flex flex-col items-start gap-1">
+                            <div class="flex items-center gap-2 text-emerald-700"><i class="fa-solid fa-clipboard-list text-emerald-600"></i><span class="text-xs font-semibold tracking-wide uppercase">View</span></div>
+                            <span class="text-[13px] font-medium text-emerald-900">Complaints</span>
+                        </a>
+                        <a href="view_cases.php" class="quick-btn glass group rounded-xl px-4 py-3 flex flex-col items-start gap-1">
+                            <div class="flex items-center gap-2 text-indigo-700"><i class="fa-solid fa-gavel text-indigo-600"></i><span class="text-xs font-semibold tracking-wide uppercase">View</span></div>
+                            <span class="text-[13px] font-medium text-indigo-900">Cases</span>
+                        </a>
+                    </div>
                 </div>
-                <div>
-                    <h4 class="font-medium text-gray-800">View Complaints</h4>
-                    <p class="text-sm text-gray-500">Check status of your submissions</p>
-                </div>
-            </a>
-            <a href="submit_complaints.php" class="card-hover flex items-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
-                <div class="bg-green-50 p-3 rounded-lg mr-4">
-                    <i class="fas fa-file-alt text-green-600 text-lg"></i>
-                </div>
-                <div>
-                    <h4 class="font-medium text-gray-800">Submit Complaint</h4>
-                    <p class="text-sm text-gray-500">File a new complaint</p>
-                </div>
-            </a>
-            <a href="view_cases.php" class="card-hover flex items-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
-                <div class="bg-yellow-50 p-3 rounded-lg mr-4">
-                    <i class="fas fa-gavel text-yellow-600 text-lg"></i>
-                </div>
-                <div>
-                    <h4 class="font-medium text-gray-800">View Cases</h4>
-                    <p class="text-sm text-gray-500">Monitor active cases</p>
-                </div>
-            </a>
+            </div>
         </div>
-    </div>    <!-- Dashboard Content -->
-    <div class="container mx-auto mt-10 px-4 pb-10">
-        <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
-            <!-- Statistics Section -->
-            <div class="md:col-span-5 bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-                <h2 class="text-lg font-medium text-gray-800 mb-5 flex items-center">
-                    <i class="fas fa-chart-bar text-primary-500 mr-2"></i>
-                    Statistics
-                </h2>
-                
-                <div class="space-y-6">
-                    <div class="flex flex-col">
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="text-sm text-gray-600">Total Complaints</span>
-                            <span id="complaints-count" class="text-sm font-medium text-primary-600 bg-primary-50 px-2 py-0.5 rounded">0</span>
-                        </div>
-                        <div class="w-full bg-gray-100 rounded-full h-2">
-                            <div id="complaints-progress" class="progress-bar bg-primary-400 h-2 rounded-full"></div>
-                        </div>
+    </div>
+
+    <!-- MAIN GRID: Two-column (left stats, right upcoming hearings) -->
+    <div class="max-w-7xl mx-auto px-5 mt-10 pb-16">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            <!-- Statistics (Left) -->
+            <div class="lg:col-span-5 space-y-8 w-full">
+                <div class="glass rounded-2xl p-6 md:p-7 fade-in card-body-grow">
+                    <div class="flex items-center gap-2 mb-5">
+                        <i class="fa-solid fa-chart-simple text-sky-600"></i>
+                        <h2 class="text-sky-900 font-semibold tracking-tight">Statistics</h2>
                     </div>
-                    
-                    <div class="flex flex-col">
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="text-sm text-gray-600">Total Cases</span>
-                            <span id="cases-count" class="text-sm font-medium text-primary-600 bg-primary-50 px-2 py-0.5 rounded">0</span>
-                        </div>
-                        <div class="w-full bg-gray-100 rounded-full h-2">
-                            <div id="cases-progress" class="progress-bar bg-green-400 h-2 rounded-full"></div>
-                        </div>
-                    </div>
-                    
-                    <div class="flex flex-col">
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="text-sm text-gray-600">Pending Complaints</span>
-                            <span id="hearings-count" class="text-sm font-medium text-primary-600 bg-primary-50 px-2 py-0.5 rounded">0</span>
-                        </div>
-                        <div class="w-full bg-gray-100 rounded-full h-2">
-                            <div id="hearings-progress" class="progress-bar bg-yellow-400 h-2 rounded-full"></div>
-                        </div>
-                    </div>
-                    
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="bg-green-50 rounded-lg p-4 flex items-center">
-                            <i class="fas fa-check-circle text-green-500 text-xl mr-3"></i>
-                            <div>
-                                <p class="text-xs text-gray-500">Resolved Cases</p>
-                                <p id="resolved-count" class="text-lg font-medium text-green-600">0</p>
+                    <div class="space-y-6">
+                        <!-- Complaints (Pending vs Total) -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-xs font-semibold text-sky-800 tracking-wide">Total Complaints</span>
+                                <span class="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-sky-100 text-sky-700"><?= $complaintsCount ?></span>
+                            </div>
+                            <div class="space-y-2">
+                                <div>
+                                    <div class="flex justify-between text-[10px] font-medium text-amber-700 mb-0.5"><span>Pending</span><span><?= $pendingComplaints ?></span></div>
+                                    <div class="w-full h-2.5 rounded-full bg-amber-50 overflow-hidden">
+                                        <div class="h-full bg-gradient-to-r from-amber-400 to-amber-500 progress-bar" style="width: <?= $pendingComplaintsPercent ?>%"></div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="flex justify-between text-[10px] font-medium text-emerald-700 mb-0.5"><span>Resolved Cases</span><span><?= $resolvedCases ?></span></div>
+                                    <div class="w-full h-2.5 rounded-full bg-emerald-50 overflow-hidden">
+                                        <div class="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 progress-bar" style="width: <?= $caseResolvedPercent ?>%"></div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        
-                        <div class="bg-yellow-50 rounded-lg p-4 flex items-center">
-                            <i class="fas fa-clock text-yellow-500 text-xl mr-3"></i>
-                            <div>
-                                <p class="text-xs text-gray-500">Pending Cases</p>
-                                <p id="pending-count" class="text-lg font-medium text-yellow-600">0</p>
-                            </div>
+                        <!-- Cases Summary Row -->
+                        <div>
+                            <div class="flex justify-between mb-1.5 text-xs font-medium text-indigo-800"><span>Case Phases</span><span class="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-700"><?= $casesCount ?></span></div>
+                            <p class="text-[10px] mt-1 text-indigo-800/70">Mediation: <?= $mediationCases ?> • Resolution: <?= $resolutionCases ?> • Settlement: <?= $settlementCases ?> • Open: <?= $openCases ?></p>
                         </div>
-                        
-                        <div class="bg-purple-50 rounded-lg p-4 flex items-center col-span-2">
-                            <i class="fas fa-calendar-alt text-purple-500 text-xl mr-3"></i>
-                            <div>
-                                <p class="text-xs text-gray-500">Scheduled Hearings</p>
-                                <p id="mediated-count" class="text-lg font-medium text-purple-600">0</p>
+                        <!-- Hearings -->
+                        <div>
+                            <div class="flex justify-between mb-1.5 text-xs font-medium text-rose-800"><span>Scheduled Hearings</span><span class="px-2 py-0.5 rounded-md bg-rose-100 text-rose-700"><?= $scheduledHearings ?></span></div>
+                            <div class="w-full bg-white/60 rounded-full progress-wrap overflow-hidden h-2.5">
+                                <div class="progress-bar bg-gradient-to-r from-rose-400 to-rose-500 h-full" style="width: <?= $hearingPercent ?>%"></div>
+                            </div>
+                            <p class="text-[10px] mt-1 text-rose-800/70">Relative to total cases</p>
+                        </div>
+                        <!-- Chips -->
+                        <div class="grid grid-cols-2 gap-3 pt-2">
+                            <div class="glass rounded-xl p-4 flex items-start gap-3">
+                                <div class="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600"><i class="fa-solid fa-circle-check"></i></div>
+                                <div><p class="text-[10px] tracking-wide uppercase font-semibold text-emerald-700">Resolved</p><p class="text-lg leading-snug font-semibold text-emerald-800"><?= $resolvedCases ?></p></div>
+                            </div>
+                            <div class="glass rounded-xl p-4 flex items-start gap-3">
+                                <div class="h-9 w-9 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600"><i class="fa-solid fa-hourglass-half"></i></div>
+                                <div><p class="text-[10px] tracking-wide uppercase font-semibold text-amber-700">Pending Complaints</p><p class="text-lg leading-snug font-semibold text-amber-800"><?= $pendingComplaints ?></p></div>
+                            </div>
+                            <div class="glass rounded-xl p-4 flex items-start gap-3">
+                                <div class="h-9 w-9 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600"><i class="fa-solid fa-handshake"></i></div>
+                                <div><p class="text-[10px] tracking-wide uppercase font-semibold text-indigo-700">Mediation</p><p class="text-lg leading-snug font-semibold text-indigo-800"><?= $mediationCases ?></p></div>
+                            </div>
+                            <div class="glass rounded-xl p-4 flex items-start gap-3">
+                                <div class="h-9 w-9 rounded-lg bg-rose-100 flex items-center justify-center text-rose-600"><i class="fa-solid fa-gavel"></i></div>
+                                <div><p class="text-[10px] tracking-wide uppercase font-semibold text-rose-700">Hearings</p><p class="text-lg leading-snug font-semibold text-rose-800"><?= $scheduledHearings ?></p></div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-              <!-- Calendar Section -->
-            <div class="md:col-span-7 bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-                <h2 class="text-lg font-medium text-gray-800 mb-5 flex items-center">
-                    <i class="fas fa-calendar text-primary-500 mr-2"></i>
-                    Upcoming Hearings
-                </h2>
-                <div id='calendar' class="calendar-container mt-2"></div>
+            <!-- Upcoming Hearings (Right) -->
+            <div class="lg:col-span-7 glass rounded-2xl p-6 md:p-7 fade-in card-body-grow">
+                <div class="flex items-center gap-2 mb-5">
+                    <i class="fa-solid fa-calendar-days text-sky-600"></i>
+                    <h2 class="text-sky-900 font-semibold tracking-tight">Upcoming Hearings</h2>
+                </div>
+                <iframe src="../SecMenu/schedule/CalendarExternal.php" class="w-full rounded-xl border border-white/40 h-[640px] bg-white/50"></iframe>
+                <div class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] text-sky-800/80">
+                    <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-purple-500/80"></span><span>Hearings</span></div>
+                    <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-amber-500/80"></span><span>Mediation</span></div>
+                    <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-emerald-500/80"></span><span>Resolution</span></div>
+                    <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-pink-500/80"></span><span>Settlement</span></div>
+                </div>
             </div>
         </div>
     </div>
@@ -600,39 +714,26 @@ session_start();
             animateStatistics();
         });
 
-        function animateStatistics() {
-            // Data values
-            const complaints = 10;
-            const cases = 1;
-            const mediated = 2;
-            const resolved = 2;
-            const pending = 0;
-            const hearings = 3;
-            
-            // Maximum value for scaling the progress bars
-            const max = Math.max(complaints, cases, hearings, resolved, pending, mediated, 1);
-            
-            // Set text values
-            document.getElementById('complaints-count').textContent = complaints;
-            document.getElementById('cases-count').textContent = cases;
-            document.getElementById('hearings-count').textContent = hearings;
-            document.getElementById('resolved-count').textContent = resolved;
-            document.getElementById('pending-count').textContent = pending;
-            document.getElementById('mediated-count').textContent = mediated;
-            
-            // Set progress bar widths with delay for animation effect
-            setTimeout(() => {
-                document.getElementById('complaints-progress').style.width = (complaints / max) * 100 + "%";
-            }, 300);
-            
-            setTimeout(() => {
-                document.getElementById('cases-progress').style.width = (cases / max) * 100 + "%";
-            }, 600);
-            
-            setTimeout(() => {
-                document.getElementById('hearings-progress').style.width = (hearings / max) * 100 + "%";
-            }, 900);
-        }
+     
+    document.getElementById('complaints-count').textContent = <?= $complaintsCount ?>;
+    document.getElementById('cases-count').textContent = <?= $casesCount ?>;
+    document.getElementById('hearings-count').textContent = <?= $pendingComplaints ?>;
+    document.getElementById('resolved-count').textContent = <?= $resolvedCases ?>;
+    document.getElementById('pending-count').textContent = <?= $pendingCases ?>;
+    document.getElementById('mediated-count').textContent = <?= $scheduledHearings ?>;
+
+    // Optional: Calculate % for progress bars
+    const totalComplaints = <?= $complaintsCount ?> || 1; // Avoid divide-by-zero
+    const totalCases = <?= $casesCount ?> || 1;
+
+    const pendingPercent = Math.min(100, (<?= $pendingComplaints ?> / totalComplaints) * 100);
+    const casesPercent = Math.min(100, (<?= $casesCount ?> / totalComplaints) * 100);
+
+    document.getElementById('complaints-progress').style.width = pendingPercent + '%';
+    document.getElementById('cases-progress').style.width = casesPercent + '%';
+    document.getElementById('hearings-progress').style.width = (<?= $pendingCases ?> / totalCases) * 100 + '%';
+
+
 
         // Initialize animation on page load
         window.onload = animateStatistics;
@@ -653,140 +754,6 @@ session_start();
                 });            }
         });
     </script>
-      <!-- Chatbot Button and Container -->
-    <button class="chatbot-button" id="chatbotButton" aria-label="Open case assistant chatbot">
-        <div class="pulse"></div>
-        <i class="fas fa-robot"></i>
-    </button>
-    
-    <div class="chatbot-container" id="chatbotContainer">
-        <div class="chatbot-header">
-            <h3><i class="fas fa-robot"></i> Case Assistant</h3>
-            <button class="chatbot-close" id="chatbotClose" aria-label="Close chatbot">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <div class="chatbot-body" id="chatbotBody">
-            <!-- Bot welcome message -->
-            <div class="chat-message bot-message">
-                <div class="bot-avatar">
-                    <i class="fas fa-robot"></i>
-                </div>
-                <div class="message-content">
-                    Hi there! I'm your Case Assistant. How can I help you with your barangay cases today?
-                    <div class="message-time">Just now</div>
-                </div>
-            </div>
-        </div>
-        <div class="chatbot-footer">
-            <input type="text" class="chatbot-input" id="chatbotInput" placeholder="Type your question here..." aria-label="Type your message">
-            <button class="send-button" id="sendButton" aria-label="Send message">
-                <i class="fas fa-paper-plane"></i>
-            </button>
-        </div>
-    </div>
-    
-    <script>
-        // Chatbot functionality
-        document.addEventListener('DOMContentLoaded', function() {
-            const chatbotButton = document.getElementById('chatbotButton');
-            const chatbotContainer = document.getElementById('chatbotContainer');
-            const chatbotClose = document.getElementById('chatbotClose');
-            const chatbotInput = document.getElementById('chatbotInput');
-            const sendButton = document.getElementById('sendButton');
-            const chatbotBody = document.getElementById('chatbotBody');
-            
-            // Toggle chatbot visibility
-            chatbotButton.addEventListener('click', function() {
-                chatbotContainer.classList.toggle('active');
-                chatbotInput.focus();
-            });
-            
-            // Close chatbot
-            chatbotClose.addEventListener('click', function() {
-                chatbotContainer.classList.remove('active');
-            });
-            
-            // Send message function
-            function sendMessage() {
-                const message = chatbotInput.value.trim();
-                if (message === '') return;
-                
-                // Add user message to chat
-                const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                const userMessageHTML = `
-                    <div class="chat-message user-message">
-                        <div class="message-content">
-                            ${message}
-                            <div class="message-time">${timestamp}</div>
-                        </div>
-                    </div>
-                `;
-                
-                chatbotBody.innerHTML += userMessageHTML;
-                chatbotInput.value = '';
-                chatbotBody.scrollTop = chatbotBody.scrollHeight;
-                
-                // Simulate bot typing
-                setTimeout(() => {
-                    const botResponse = getBotResponse(message);
-                    const botMessageHTML = `
-                        <div class="chat-message bot-message">
-                            <div class="bot-avatar">
-                                <i class="fas fa-robot"></i>
-                            </div>
-                            <div class="message-content">
-                                ${botResponse}
-                                <div class="message-time">${timestamp}</div>
-                            </div>
-                        </div>
-                    `;
-                    
-                    chatbotBody.innerHTML += botMessageHTML;
-                    chatbotBody.scrollTop = chatbotBody.scrollHeight;
-                }, 800);
-            }
-            
-            // Send message on button click
-            sendButton.addEventListener('click', sendMessage);
-            
-            // Send message on Enter key
-            chatbotInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    sendMessage();
-                }
-            });
-            
-            // Simple bot response function
-            function getBotResponse(message) {
-                message = message.toLowerCase();
-                
-                if (message.includes('hello') || message.includes('hi') || message.includes('hey')) {
-                    return 'Hello! How can I assist you with your case today?';
-                }
-                else if (message.includes('case status') || message.includes('status')) {
-                    return 'To check your case status, please go to the "View Cases" section where you can see all your active and resolved cases.';
-                }
-                else if (message.includes('hearing') || message.includes('schedule')) {
-                    return 'Your next hearing is scheduled for May 20, 2025. You can view all upcoming hearings in the calendar section of your dashboard.';
-                }
-                else if (message.includes('mediation') || message.includes('mediator')) {
-                    return 'Mediation sessions are conducted by trained Lupong Tagapamayapa members. Your upcoming mediation session is scheduled for May 18, 2025.';
-                }
-                else if (message.includes('complaint') || message.includes('file') || message.includes('submit')) {
-                    return 'To file a new complaint, click on the "Submit Complaint" button in the Quick Actions section of your dashboard.';
-                }
-                else if (message.includes('contact') || message.includes('barangay') || message.includes('office')) {
-                    return 'You can contact the Barangay Office at (123) 456-7890 or visit them during office hours: Monday to Friday, 8:00 AM to 5:00 PM.';
-                }
-                else if (message.includes('thank')) {
-                    return 'You\'re welcome! Is there anything else I can help you with?';
-                }
-                else {
-                    return 'I\'m not sure I understand. Could you please rephrase your question? You can ask about case status, hearings, complaints, or contact information.';
-                }
-            }
-        });
-    </script>
+    <?php include('../chatbot/bpamis_case_assistant.php'); ?>
 </body>
 </html>

@@ -1,9 +1,129 @@
 <?php
-/**
- * Home/Dashboard Page
- * Barangay Panducot Adjudication Management Information System
- */
 session_start();
+
+include '../server/server.php';
+
+
+// Initialize all stats
+$complaintsCount = $resolvedCount = $pendingCount = $rejectedCount = 0;
+$casesCount = $mediatedCount = $resolutionCount = $settlementCount = $closedCount = $resolvedCaseCount = 0;
+$scheduledHearings = 0;
+
+// Complaints Count
+$complaintsQuery = "SELECT status, COUNT(*) as count FROM complaint_info GROUP BY status";
+$result = $conn->query($complaintsQuery);
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $status = strtolower(trim($row['status']));
+        $count = (int)$row['count'];
+        $complaintsCount += $count;
+
+        if ($status === 'resolved') $resolvedCount = $count;
+        elseif ($status === 'pending') $pendingCount = $count;
+        elseif ($status === 'rejected') $rejectedCount = $count;
+    }
+}
+
+// Cases Count
+$caseQuery = "SELECT case_status as status, COUNT(*) as count FROM case_info GROUP BY case_status";
+$result = $conn->query($caseQuery);
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $status = strtolower(trim($row['status']));
+        $count = (int)$row['count'];
+        $casesCount += $count;
+
+        if ($status === 'mediation') $mediatedCount = $count;
+        elseif ($status === 'resolution') $resolutionCount = $count;
+        elseif ($status === 'settlement') $settlementCount = $count;
+        elseif ($status === 'close') $closedCount = $count;
+        elseif ($status === 'resolved') $resolvedCaseCount = $count;
+    }
+}
+
+// Hearings Count
+$hearingQuery = "SELECT COUNT(*) as count FROM schedule_list";
+$result = $conn->query($hearingQuery);
+if ($result && $row = $result->fetch_assoc()) {
+    $scheduledHearings = (int)$row['count'];
+}
+
+// ========== RECENT ACTIVITY ==========
+function getComplainantName($conn, $resident_id, $external_id) {
+    if (!empty($resident_id)) {
+        $stmt = $conn->prepare("SELECT first_name, middle_name, last_name FROM resident_info WHERE resident_id = ?");
+        $stmt->bind_param("i", $resident_id);
+    } else {
+        $stmt = $conn->prepare("SELECT first_name, middle_name, last_name FROM external_complainant WHERE external_complaint_id = ?");
+        $stmt->bind_param("i", $external_id);
+    }
+    $stmt->execute();
+    $result = $stmt->get_result()->fetch_assoc();
+    return $result ? $result['first_name'] . ' ' . $result['middle_name'] . ' ' . $result['last_name'] : 'Unknown';
+}
+
+$recentActivities = [];
+$query = "SELECT complaint_id, resident_id, external_complainant_id, date_filed FROM complaint_info ORDER BY date_filed DESC LIMIT 5";
+$result = $conn->query($query);
+while ($row = $result->fetch_assoc()) {
+    $name = getComplainantName($conn, $row['resident_id'], $row['external_complainant_id']);
+    $timeAgo = time() - strtotime($row['date_filed']);
+    $hoursAgo = floor($timeAgo / 3600);
+    $recentActivities[] = [
+        'type' => 'complaint',
+        'message' => "New complaint filed by $name",
+        'time' => $row['date_filed']
+    ];
+}
+
+// ========== MONTHLY STATS ==========
+$stats = [];
+$monthlyLabels = [];
+$monthlyComplaints = [];
+$monthlyCases = [];
+$monthlyMediation = [];
+$monthlyResolution = [];
+$monthlySettlement = [];
+$monthlyClosed = [];
+$monthlyResolved = [];
+$monthlyRejected = [];
+
+for ($i = 5; $i >= 0; $i--) {
+    $month = date('Y-m', strtotime("-{$i} months"));
+
+    $monthlyLabels[] = date('M Y', strtotime($month));
+
+    // Complaints
+    $complaintsQuery = $conn->query("SELECT COUNT(*) AS count FROM complaint_info WHERE DATE_FORMAT(date_filed, '%Y-%m') = '$month'");
+    $monthlyComplaints[] = $complaintsQuery ? (int)$complaintsQuery->fetch_assoc()['count'] : 0;
+
+    $rejectedQuery = $conn->query("SELECT COUNT(*) AS count FROM complaint_info WHERE status = 'rejected' AND DATE_FORMAT(date_filed, '%Y-%m') = '$month'");
+    $monthlyRejected[] = $rejectedQuery ? (int)$rejectedQuery->fetch_assoc()['count'] : 0;
+
+    // Cases (all & by type)
+    $caseQuery = $conn->query("SELECT case_status, COUNT(*) as count FROM case_info c JOIN complaint_info ci ON c.complaint_id = ci.complaint_id WHERE DATE_FORMAT(ci.date_filed, '%Y-%m') = '$month' GROUP BY case_status");
+    $totalCases = 0;
+    $mediation = $resolution = $settlement = $closed = $resolved = 0;
+    if ($caseQuery) {
+        while ($row = $caseQuery->fetch_assoc()) {
+            $status = strtolower(trim($row['case_status']));
+            $count = (int)$row['count'];
+            $totalCases += $count;
+            if ($status === 'mediation') $mediation = $count;
+            elseif ($status === 'resolution') $resolution = $count;
+            elseif ($status === 'settlement') $settlement = $count;
+            elseif ($status === 'close') $closed = $count;
+            elseif ($status === 'resolved') $resolved = $count;
+        }
+    }
+    $monthlyCases[] = $totalCases;
+    $monthlyMediation[] = $mediation;
+    $monthlyResolution[] = $resolution;
+    $monthlySettlement[] = $settlement;
+    $monthlyClosed[] = $closed;
+    $monthlyResolved[] = $resolved;
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -46,7 +166,7 @@ session_start();
             }
         }
     </script>
-    <style>        .gradient-bg {
+     <style>        .gradient-bg {
             background: linear-gradient(to right, #f0f7ff, #e0effe);
         }
         .card-hover {
@@ -62,23 +182,7 @@ session_start();
         .stat-card {
             border-radius: 12px;
             overflow: hidden;
-        }        /* Enhanced Sidebar Styles */
-        .toggle-menu .fa-chevron-down {
-            transition: transform 0.3s ease;
-        }
-        .toggle-menu .rotate-180 {
-            transform: rotate(180deg);
-        }
-        .submenu {
-            max-height: 0;
-            overflow: hidden;
-            opacity: 0;
-            transition: max-height 0.3s ease, opacity 0.2s ease;
-        }
-        .submenu.active {
-            max-height: 500px;
-            opacity: 1;
-        }
+        }       
         
         /* Modern Calendar Styles */
         .calendar-container {
@@ -126,244 +230,10 @@ session_start();
             color: #4b5563 !important;
         }
         
-        /* Chatbot Button Styles */
-        .chatbot-button {
-            position: fixed;
-            bottom: 2rem;
-            right: 2rem;
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #0281d4, #0c9ced);
-            box-shadow: 0 4px 15px rgba(2, 129, 212, 0.25);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            transition: all 0.3s ease;
-            cursor: pointer;
-            border: none;
-            outline: none;
-        }
-        
-        .chatbot-button:hover {
-            transform: translateY(-5px) scale(1.05);
-            box-shadow: 0 6px 20px rgba(2, 129, 212, 0.35);
-        }
-        
-        .chatbot-button i {
-            font-size: 24px;
-            color: white;
-            transition: transform 0.3s ease;
-        }
-        
-        .chatbot-button:hover i {
-            transform: rotate(10deg);
-        }
-        
-        .pulse {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            background-color: rgba(2, 129, 212, 0.7);
-            opacity: 0;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0% {
-                transform: scale(0.95);
-                opacity: 0.7;
-            }
-            70% {
-                transform: scale(1.1);
-                opacity: 0;
-            }
-            100% {
-                transform: scale(0.95);
-                opacity: 0;
-            }
-        }
-        
-        .chatbot-container {
-            position: fixed;
-            bottom: 5.5rem;
-            right: 2rem;
-            width: 350px;
-            max-height: 500px;
-            border-radius: 16px;
-            background: white;
-            box-shadow: 0 5px 25px rgba(0, 0, 0, 0.15);
-            z-index: 999;
-            overflow: hidden;
-            opacity: 0;
-            transform: translateY(20px) scale(0.95);
-            pointer-events: none;
-            transition: all 0.3s ease;
-        }
-        
-        .chatbot-container.active {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-            pointer-events: all;
-        }
-        
-        .chatbot-header {
-            padding: 16px 20px;
-            background: linear-gradient(135deg, #0281d4, #0c9ced);
-            color: white;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        
-        .chatbot-header h3 {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-weight: 600;
-            font-size: 1rem;
-        }
-        
-        .chatbot-close {
-            background: transparent;
-            border: none;
-            color: white;
-            font-size: 18px;
-            cursor: pointer;
-            transition: transform 0.2s ease;
-        }
-        
-        .chatbot-close:hover {
-            transform: rotate(90deg);
-        }
-        
-        .chatbot-body {
-            height: 340px;
-            overflow-y: auto;
-            padding: 20px;
-        }
-        
-        .chatbot-footer {
-            padding: 12px 15px;
-            border-top: 1px solid #f0f0f0;
-            display: flex;
-            align-items: center;
-        }
-        
-        .chatbot-input {
-            flex: 1;
-            border: 1px solid #e5e7eb;
-            border-radius: 20px;
-            padding: 10px 15px;
-            font-size: 14px;
-            outline: none;
-            transition: border-color 0.2s ease;
-        }
-        
-        .chatbot-input:focus {
-            border-color: #0c9ced;
-            box-shadow: 0 0 0 2px rgba(12, 156, 237, 0.1);
-        }
-        
-        .send-button {
-            background: #0c9ced;
-            color: white;
-            border: none;
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            margin-left: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: background 0.2s ease;
-        }
-        
-        .send-button:hover {
-            background: #0281d4;
-        }
-        
-        .chat-message {
-            margin-bottom: 15px;
-            display: flex;
-            align-items: flex-start;
-        }
-        
-        .user-message {
-            justify-content: flex-end;
-        }
-        
-        .bot-message {
-            justify-content: flex-start;
-        }
-        
-        .message-content {
-            max-width: 80%;
-            padding: 12px 16px;
-            border-radius: 18px;
-            font-size: 14px;
-            line-height: 1.4;
-            position: relative;
-        }
-        
-        .user-message .message-content {
-            background-color: #0c9ced;
-            color: white;
-            border-bottom-right-radius: 4px;
-            margin-right: 10px;
-        }
-        
-        .bot-message .message-content {
-            background-color: #f0f7ff;
-            color: #333;
-            border-bottom-left-radius: 4px;
-            margin-left: 10px;
-        }
-        
-        .bot-avatar {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: #e0effe;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .bot-avatar i {
-            color: #0281d4;
-            font-size: 16px;
-        }
-        
-        .message-time {
-            font-size: 10px;
-            color: #888;
-            margin-top: 4px;
-            text-align: right;
-        }
-        
-        /* Mobile responsiveness for chatbot */
-        @media (max-width: 640px) {
-            .chatbot-container {
-                width: calc(100% - 32px);
-                right: 16px;
-                left: 16px;
-                bottom: 5rem;
-            }
-            
-            .chatbot-button {
-                bottom: 1.5rem;
-                right: 1.5rem;
-            }
-        }
     </style>
 </head>
 <body class="bg-gray-50 font-sans">
-    <?php include '../includes/barangay_official_nav.php'; ?>
+    <?php include '../includes/barangay_official_lupon_nav.php'; ?>
     
     <!-- Welcome Banner -->
     <section class="container mx-auto mt-10 px-4">
@@ -381,7 +251,7 @@ session_start();
     <div class="container mx-auto mt-8 px-4">
         <h3 class="text-lg font-medium text-gray-700 mb-4 px-2">Quick Actions</h3>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <a href="add_complaints.php" class="card-hover flex items-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
+            <a href="feedback_lupon.php" class="card-hover flex items-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
                 <div class="bg-blue-50 p-3 rounded-lg mr-4">
                     <i class="fas fa-plus-circle text-primary-600 text-lg"></i>
                 </div>
@@ -390,7 +260,7 @@ session_start();
                     <p class="text-sm text-gray-500">Create a Feedback</p>
                 </div>
             </a>
-            <a href="view_cases.php" class="card-hover flex items-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
+            <a href="view_assigned_cases.php" class="card-hover flex items-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
                 <div class="bg-yellow-50 p-3 rounded-lg mr-4">
                     <i class="fas fa-gavel text-yellow-600 text-lg"></i>
                 </div>
@@ -399,7 +269,7 @@ session_start();
                     <p class="text-sm text-gray-500">Monitor active cases</p>
                 </div>
             </a>
-            <a href="appoint_hearing.php" class="card-hover flex items-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
+            <a href="view_hearing_calendar.php" class="card-hover flex items-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
                 <div class="bg-green-50 p-3 rounded-lg mr-4">
                     <i class="fas fa-calendar-alt text-green-600 text-lg"></i>
                 </div>
@@ -554,119 +424,16 @@ session_start();
             </div>
         </div>
     </div>
-      <div id="sidebar" class="fixed left-0 top-0 w-72 h-full bg-white shadow-lg p-5 transform -translate-x-full transition-transform duration-300 z-50 overflow-y-auto">
-        <div class="flex justify-between items-center mb-6">
-            <div class="flex items-center">
-                <a href="home.php">
-                    <img src="logo.png" alt="BPAMIS Logo" width="50" height="50" class="mr-3">
-                </a>
-                <h2 class="text-lg font-bold text-primary-700">BPAMIS</h2>
-            </div>
-            <button id="close-sidebar" class="text-gray-500 hover:text-primary-600 text-xl p-2 rounded-full hover:bg-gray-100 transition focus:outline-none">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        
-        <div class="border-b border-gray-200 mb-4 pb-4">
-            <div class="flex items-center">
-                <div class="bg-primary-100 rounded-full p-3">
-                    <i class="fas fa-user-shield text-primary-600"></i>
-                </div>
-                <div class="ml-3">
-                    <p class="text-sm font-medium">Barangay Official - Lupon Tagapamayapa</p>
-                    <p class="text-xs text-gray-500">Adjudication Panel</p>
-                </div>
-            </div>
-        </div>
-        
-        <nav>
-            <ul class="space-y-1">
-                <li>
-                    <a href="home.php" class="flex items-center px-4 py-3 text-gray-700 hover:bg-primary-50 hover:text-primary-700 rounded-lg transition group">
-                        <i class="fas fa-home w-5 h-5 mr-3 text-gray-400 group-hover:text-primary-600"></i>
-                        <span>Dashboard</span>
-                    </a>
-                </li>
-                <li class="pt-2">
-                    <p class="px-4 py-1 text-xs font-medium text-gray-400 uppercase tracking-wider">Case Management</p>
-                </li>
-                <li>
-                    <button class="toggle-menu w-full flex items-center justify-between px-4 py-3 text-gray-700 hover:bg-primary-50 hover:text-primary-700 rounded-lg transition group">
-                        <div class="flex items-center">
-                            <i class="fas fa-exclamation-circle w-5 h-5 mr-3 text-gray-400 group-hover:text-primary-600"></i>
-                            <span>Complaints</span>
-                        </div>
-                        <i class="fas fa-chevron-down text-sm text-gray-400"></i>
-                    </button>                    <ul class="submenu hidden space-y-1 pl-12 mt-1">
-                        <li><a href="add_complaints.php" class="block px-3 py-2 text-sm text-gray-600 hover:text-primary-700 hover:bg-primary-50 rounded-md transition">Add Complaints</a></li>
-                        <li><a href="view_complaints.php" class="block px-3 py-2 text-sm text-gray-600 hover:text-primary-700 hover:bg-primary-50 rounded-md transition">View Complaints</a></li>
-                    </ul>
-                </li>
-                <li>
-                    <button class="toggle-menu w-full flex items-center justify-between px-4 py-3 text-gray-700 hover:bg-primary-50 hover:text-primary-700 rounded-lg transition group">
-                        <div class="flex items-center">
-                            <i class="fas fa-folder w-5 h-5 mr-3 text-gray-400 group-hover:text-primary-600"></i>
-                            <span>Cases</span>
-                        </div>
-                        <i class="fas fa-chevron-down text-sm text-gray-400"></i>
-                    </button>                    <ul class="submenu hidden space-y-1 pl-12 mt-1">
-                        <li><a href="view_cases.php" class="block px-3 py-2 text-sm text-gray-600 hover:text-primary-700 hover:bg-primary-50 rounded-md transition">View Cases</a></li>
-                        <li><a href="case_status.php" class="block px-3 py-2 text-sm text-gray-600 hover:text-primary-700 hover:bg-primary-50 rounded-md transition">Case Status</a></li>
-                    </ul>
-                </li>
-                <li>
-                    <button class="toggle-menu w-full flex items-center justify-between px-4 py-3 text-gray-700 hover:bg-primary-50 hover:text-primary-700 rounded-lg transition group">
-                        <div class="flex items-center">
-                            <i class="fas fa-calendar-alt w-5 h-5 mr-3 text-gray-400 group-hover:text-primary-600"></i>
-                            <span>Schedule</span>
-                        </div>
-                        <i class="fas fa-chevron-down text-sm text-gray-400"></i>
-                    </button>                    <ul class="submenu hidden space-y-1 pl-12 mt-1">
-                        <li><a href="appoint_hearing.php" class="block px-3 py-2 text-sm text-gray-600 hover:text-primary-700 hover:bg-primary-50 rounded-md transition">Appoint Hearing</a></li>
-                        <li><a href="reschedule_hearing.php" class="block px-3 py-2 text-sm text-gray-600 hover:text-primary-700 hover:bg-primary-50 rounded-md transition">Reschedule Hearing</a></li>
-                        <li><a href="view_hearing_calendar.php" class="block px-3 py-2 text-sm text-gray-600 hover:text-primary-700 hover:bg-primary-50 rounded-md transition">View Calendar</a></li>
-                    </ul>
-                </li>
-                <li class="pt-2">
-                    <p class="px-4 py-1 text-xs font-medium text-gray-400 uppercase tracking-wider">Reports & Forms</p>
-                </li>
-                <li>
-                    <button class="toggle-menu w-full flex items-center justify-between px-4 py-3 text-gray-700 hover:bg-primary-50 hover:text-primary-700 rounded-lg transition group">
-                        <div class="flex items-center">
-                            <i class="fas fa-chart-bar w-5 h-5 mr-3 text-gray-400 group-hover:text-primary-600"></i>
-                            <span>Reports</span>
-                        </div>
-                        <i class="fas fa-chevron-down text-sm text-gray-400"></i>
-                    </button>                    <ul class="submenu hidden space-y-1 pl-12 mt-1">
-                        <li><a href="view_complaints_report.php" class="block px-3 py-2 text-sm text-gray-600 hover:text-primary-700 hover:bg-primary-50 rounded-md transition">Complaints Report</a></li>
-                        <li><a href="view_case_reports.php" class="block px-3 py-2 text-sm text-gray-600 hover:text-primary-700 hover:bg-primary-50 rounded-md transition">Case Reports</a></li>
-                    </ul>
-                </li>
-                <li>
-                    <button class="toggle-menu w-full flex items-center justify-between px-4 py-3 text-gray-700 hover:bg-primary-50 hover:text-primary-700 rounded-lg transition group">
-                        <div class="flex items-center">
-                            <i class="fas fa-file w-5 h-5 mr-3 text-gray-400 group-hover:text-primary-600"></i>
-                            <span>KP Forms</span>
-                        </div>
-                        <i class="fas fa-chevron-down text-sm text-gray-400"></i>
-                    </button>                    <ul class="submenu hidden space-y-1 pl-12 mt-1">
-                        <li><a href="view_kp_forms.php" class="block px-3 py-2 text-sm text-gray-600 hover:text-primary-700 hover:bg-primary-50 rounded-md transition">View Templates</a></li>
-                        <li><a href="print_kp_forms.php" class="block px-3 py-2 text-sm text-gray-600 hover:text-primary-700 hover:bg-primary-50 rounded-md transition">Print Form</a></li>
-                    </ul>
-                </li>
-            </ul>
-        </nav>
-        
-        <div class="absolute bottom-0 left-0 right-0 p-5 border-t border-gray-200">
-            <a href="../login.php" class="flex items-center text-gray-600 hover:text-primary-700">
-                <i class="fas fa-sign-out-alt mr-2"></i>
-                <span>Logout</span>
-            </a>
-        </div>
-    </div>
-      <script>
+    <?php include 'sidebar_lupon.php'; ?>
+     <script>
+        document.querySelectorAll('.toggle-menu').forEach(button => {
+    button.addEventListener('click', () => {
+        const submenu = button.nextElementSibling;
+        submenu.classList.toggle('hidden');
+    });
+});
         document.addEventListener('DOMContentLoaded', function() {
-            // Ensure submenu classes are correctly initialized
+
             document.querySelectorAll('.submenu').forEach(submenu => {
                 if (submenu.classList.contains('hidden')) {
                     submenu.classList.remove('active');
@@ -899,144 +666,6 @@ session_start();
             loadStatistics();
         });
     </script>
-    
-    <!-- Chatbot Button and Container -->
-    <button class="chatbot-button" id="chatbotButton" aria-label="Open case assistant chatbot">
-        <div class="pulse"></div>
-        <i class="fas fa-robot"></i>
-    </button>
-    
-    <div class="chatbot-container" id="chatbotContainer">
-        <div class="chatbot-header">
-            <h3><i class="fas fa-robot"></i> Case Assistant</h3>
-            <button class="chatbot-close" id="chatbotClose" aria-label="Close chatbot">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <div class="chatbot-body" id="chatbotBody">
-            <!-- Bot welcome message -->
-            <div class="chat-message bot-message">
-                <div class="bot-avatar">
-                    <i class="fas fa-robot"></i>
-                </div>
-                <div class="message-content">
-                    Hi there! I'm your Case Assistant. How can I help you with managing barangay cases today?
-                    <div class="message-time">Just now</div>
-                </div>
-            </div>
-        </div>
-        <div class="chatbot-footer">
-            <input type="text" class="chatbot-input" id="chatbotInput" placeholder="Type your question here..." aria-label="Type your message">
-            <button class="send-button" id="sendButton" aria-label="Send message">
-                <i class="fas fa-paper-plane"></i>
-            </button>
-        </div>
-    </div>
-    
-    <script>
-        // Chatbot functionality
-        document.addEventListener('DOMContentLoaded', function() {
-            const chatbotButton = document.getElementById('chatbotButton');
-            const chatbotContainer = document.getElementById('chatbotContainer');
-            const chatbotClose = document.getElementById('chatbotClose');
-            const chatbotInput = document.getElementById('chatbotInput');
-            const sendButton = document.getElementById('sendButton');
-            const chatbotBody = document.getElementById('chatbotBody');
-            
-            // Toggle chatbot visibility
-            chatbotButton.addEventListener('click', function() {
-                chatbotContainer.classList.toggle('active');
-                chatbotInput.focus();
-            });
-            
-            // Close chatbot
-            chatbotClose.addEventListener('click', function() {
-                chatbotContainer.classList.remove('active');
-            });
-            
-            // Send message function
-            function sendMessage() {
-                const message = chatbotInput.value.trim();
-                if (message === '') return;
-                
-                // Add user message to chat
-                const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                const userMessageHTML = `
-                    <div class="chat-message user-message">
-                        <div class="message-content">
-                            ${message}
-                            <div class="message-time">${timestamp}</div>
-                        </div>
-                    </div>
-                `;
-                
-                chatbotBody.innerHTML += userMessageHTML;
-                chatbotInput.value = '';
-                chatbotBody.scrollTop = chatbotBody.scrollHeight;
-                
-                // Simulate bot typing
-                setTimeout(() => {
-                    const botResponse = getBotResponse(message);
-                    const botMessageHTML = `
-                        <div class="chat-message bot-message">
-                            <div class="bot-avatar">
-                                <i class="fas fa-robot"></i>
-                            </div>
-                            <div class="message-content">
-                                ${botResponse}
-                                <div class="message-time">${timestamp}</div>
-                            </div>
-                        </div>
-                    `;
-                    
-                    chatbotBody.innerHTML += botMessageHTML;
-                    chatbotBody.scrollTop = chatbotBody.scrollHeight;
-                }, 800);
-            }
-            
-            // Send message on button click
-            sendButton.addEventListener('click', sendMessage);
-            
-            // Send message on Enter key
-            chatbotInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    sendMessage();
-                }
-            });
-            
-            // Simple bot response function for barangay officials
-            function getBotResponse(message) {
-                message = message.toLowerCase();
-                
-                if (message.includes('hello') || message.includes('hi') || message.includes('hey')) {
-                    return 'Hello! How can I assist you with managing cases today?';
-                }
-                else if (message.includes('case status') || message.includes('status')) {
-                    return 'You can view all case statuses in the "View Cases" section. Would you like me to help you navigate there?';
-                }
-                else if (message.includes('hearing') || message.includes('schedule')) {
-                    return 'To schedule a new hearing, go to "Appoint Hearing" under the Schedule menu. To view all upcoming hearings, check the calendar on your dashboard.';
-                }
-                else if (message.includes('mediation') || message.includes('mediator')) {
-                    return 'Mediation sessions are conducted by trained members of the Lupong Tagapamayapa. Upcoming sessions can be found in the calendar.';
-                }
-                else if (message.includes('complaint') || message.includes('file') || message.includes('new complaint')) {
-                    return 'To add a new complaint to the system, click on "Add Complaint" from the Quick Actions section or navigate to Complaints > Add Complaints from the menu.';
-                }
-                else if (message.includes('kp form') || message.includes('form') || message.includes('print form')) {
-                    return 'You can access KP Forms under KP Forms > View KP Form Templates or KP Forms > Print KP Form in the navigation menu.';
-                }
-                else if (message.includes('report') || message.includes('statistics')) {
-                    return 'For detailed case reports and statistics, check "View Case Reports" or "View Complaints Report" under the Reports menu.';
-                }
-                else if (message.includes('thank')) {
-                    return 'You\'re welcome! Is there anything else I can help you with regarding case management?';
-                }
-                else {
-                    return 'I\'m here to help with case management tasks. You can ask about scheduling hearings, filing complaints, checking case status, KP forms, or generating reports.';
-                }
-            }
-        });
-    </script>
+        
 </body>
 </html>

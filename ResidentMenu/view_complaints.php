@@ -1,6 +1,88 @@
 <?php
-session_start();
+session_start(); 
+
+
+$user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : null;
+include '../server/server.php'; 
+
+$sql = "
+SELECT 
+    ci.Complaint_ID, 
+    ci.Complaint_Title, 
+    ci.Complaint_Details, 
+    ci.Date_Filed, 
+    ci.Status,
+    n.created_at AS notification_created_at
+FROM 
+    complaint_info ci
+LEFT JOIN (
+    SELECT n1.*
+    FROM notifications n1
+    INNER JOIN (
+        SELECT related_id, MAX(created_at) AS max_created
+        FROM notifications 
+        WHERE type = 'complaint'
+        GROUP BY related_id
+    ) n2 ON n1.related_id = n2.related_id AND n1.created_at = n2.max_created
+    WHERE n1.type = 'complaint'
+) n ON ci.Complaint_ID = n.related_id
+WHERE 
+    ci.resident_id = ?
+ORDER BY 
+    n.created_at DESC
+";
+
+
+
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$result = $stmt->get_result();
+
+$complaints = [];
+while ($row = $result->fetch_assoc()) {
+    $complaints[] = $row;
+}
+// Resolved Cases
+$resolvedCases = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM case_info ci 
+    JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID 
+    WHERE co.Resident_ID = $user_id AND Status = 'Resolved'
+")->fetch_assoc()['total'] ?? 0;
+$pendingComplaints = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM complaint_info 
+    WHERE Resident_ID = $user_id AND Status = 'Pending'
+")->fetch_assoc()['total'] ?? 0;
+$rejectedComplaints = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM complaint_info 
+    WHERE Resident_ID = $user_id AND Status = 'Rejected'
+")->fetch_assoc()['total'] ?? 0;
+
+
+$stmt->close();
+$conn->close();
+
+$perPage = 7;
+
+// Get current page from URL, default to 1
+$page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int) $_GET['page'] : 1;
+
+// Calculate the starting index
+$start = ($page - 1) * $perPage;
+
+// Get total complaints count
+$totalComplaints = count($complaints);
+
+// Slice the complaints for the current page
+$complaintsToDisplay = array_slice($complaints, $start, $perPage);
+
+// Calculate total pages
+$totalPages = ceil($totalComplaints / $perPage);
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -51,242 +133,7 @@ session_start();
             transform: translateY(-5px);
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
         }
-        
-        /* Chatbot Button Styles */
-        .chatbot-button {
-            position: fixed;
-            bottom: 2rem;
-            right: 2rem;
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #0281d4, #0c9ced);
-            box-shadow: 0 4px 15px rgba(2, 129, 212, 0.25);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            transition: all 0.3s ease;
-            cursor: pointer;
-            border: none;
-            outline: none;
-        }
-        
-        .chatbot-button:hover {
-            transform: translateY(-5px) scale(1.05);
-            box-shadow: 0 6px 20px rgba(2, 129, 212, 0.35);
-        }
-        
-        .chatbot-button i {
-            font-size: 24px;
-            color: white;
-            transition: transform 0.3s ease;
-        }
-        
-        .chatbot-button:hover i {
-            transform: rotate(10deg);
-        }
-        
-        .pulse {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            background-color: rgba(2, 129, 212, 0.7);
-            opacity: 0;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0% {
-                transform: scale(0.95);
-                opacity: 0.7;
-            }
-            70% {
-                transform: scale(1.1);
-                opacity: 0;
-            }
-            100% {
-                transform: scale(0.95);
-                opacity: 0;
-            }
-        }
-        
-        .chatbot-container {
-            position: fixed;
-            bottom: 5.5rem;
-            right: 2rem;
-            width: 350px;
-            max-height: 500px;
-            border-radius: 16px;
-            background: white;
-            box-shadow: 0 5px 25px rgba(0, 0, 0, 0.15);
-            z-index: 999;
-            overflow: hidden;
-            opacity: 0;
-            transform: translateY(20px) scale(0.95);
-            pointer-events: none;
-            transition: all 0.3s ease;
-        }
-        
-        .chatbot-container.active {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-            pointer-events: all;
-        }
-        
-        .chatbot-header {
-            padding: 16px 20px;
-            background: linear-gradient(135deg, #0281d4, #0c9ced);
-            color: white;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        
-        .chatbot-header h3 {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-weight: 600;
-            font-size: 1rem;
-        }
-        
-        .chatbot-close {
-            background: transparent;
-            border: none;
-            color: white;
-            font-size: 18px;
-            cursor: pointer;
-            transition: transform 0.2s ease;
-        }
-        
-        .chatbot-close:hover {
-            transform: rotate(90deg);
-        }
-        
-        .chatbot-body {
-            height: 340px;
-            overflow-y: auto;
-            padding: 20px;
-        }
-        
-        .chatbot-footer {
-            padding: 12px 15px;
-            border-top: 1px solid #f0f0f0;
-            display: flex;
-            align-items: center;
-        }
-        
-        .chatbot-input {
-            flex: 1;
-            border: 1px solid #e5e7eb;
-            border-radius: 20px;
-            padding: 10px 15px;
-            font-size: 14px;
-            outline: none;
-            transition: border-color 0.2s ease;
-        }
-        
-        .chatbot-input:focus {
-            border-color: #0c9ced;
-            box-shadow: 0 0 0 2px rgba(12, 156, 237, 0.1);
-        }
-        
-        .send-button {
-            background: #0c9ced;
-            color: white;
-            border: none;
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            margin-left: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: background 0.2s ease;
-        }
-        
-        .send-button:hover {
-            background: #0281d4;
-        }
-        
-        .chat-message {
-            margin-bottom: 15px;
-            display: flex;
-            align-items: flex-start;
-        }
-        
-        .user-message {
-            justify-content: flex-end;
-        }
-        
-        .bot-message {
-            justify-content: flex-start;
-        }
-        
-        .message-content {
-            max-width: 80%;
-            padding: 12px 16px;
-            border-radius: 18px;
-            font-size: 14px;
-            line-height: 1.4;
-            position: relative;
-        }
-        
-        .user-message .message-content {
-            background-color: #0c9ced;
-            color: white;
-            border-bottom-right-radius: 4px;
-            margin-right: 10px;
-        }
-        
-        .bot-message .message-content {
-            background-color: #f0f7ff;
-            color: #333;
-            border-bottom-left-radius: 4px;
-            margin-left: 10px;
-        }
-        
-        .bot-avatar {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: #e0effe;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .bot-avatar i {
-            color: #0281d4;
-            font-size: 16px;
-        }
-        
-        .message-time {
-            font-size: 10px;
-            color: #888;
-            margin-top: 4px;
-            text-align: right;
-        }
-        
-        /* Mobile responsiveness for chatbot */
-        @media (max-width: 640px) {
-            .chatbot-container {
-                width: calc(100% - 32px);
-                right: 16px;
-                left: 16px;
-                bottom: 5rem;
-            }
-            
-            .chatbot-button {
-                bottom: 1.5rem;
-                right: 1.5rem;
-            }
-        }
-    </style>
+        </style>
     <style>
         .status-badge {
             transition: all 0.3s ease;
@@ -299,47 +146,109 @@ session_start();
         }
     </style>
 </head>
-<body class="bg-gray-50 font-sans">    <?php include_once('../includes/resident_nav.php'); ?>    <!-- Page Header -->
-    <div class="w-full mt-10 px-4">
-        <div class="gradient-bg rounded-2xl shadow-sm p-8 md:p-10 relative overflow-hidden">
-            <div class="absolute top-0 right-0 w-64 h-64 bg-primary-100 rounded-full -mr-20 -mt-20 opacity-70"></div>
-            <div class="absolute bottom-0 left-0 w-40 h-40 bg-primary-200 rounded-full -ml-10 -mb-10 opacity-60"></div>
-            <div class="relative z-10 flex justify-between items-center">
-                <div>
-                    <h2 class="text-3xl font-light text-primary-800">Your <span class="font-medium">Complaints</span></h2>
-                    <p class="mt-3 text-gray-600 max-w-md">View and track the status of all your submitted complaints.</p>
+<body class="bg-gray-50 font-sans relative overflow-x-hidden">
+    <?php include_once('../includes/resident_nav.php'); ?>
+
+    <!-- Global Blue Blush Background Orbs -->
+    <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div class="absolute -top-40 -left-40 w-[480px] h-[480px] rounded-full bg-blue-200/40 blur-3xl animate-[float_14s_ease-in-out_infinite]"></div>
+        <div class="absolute top-1/3 -right-52 w-[560px] h-[560px] rounded-full bg-cyan-200/40 blur-[160px] animate-[float_18s_ease-in-out_infinite]"></div>
+        <div class="absolute -bottom-52 left-1/3 w-[520px] h-[520px] rounded-full bg-indigo-200/30 blur-3xl animate-[float_16s_ease-in-out_infinite]"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[900px] rounded-full bg-gradient-to-br from-blue-50 via-white to-cyan-50 opacity-70 blur-[200px]"></div>
+    </div>
+    <?php 
+        // Additional count for 'In Case'
+        $inCaseCount = 0; 
+        foreach($complaints as $c){ if(strtolower($c['Status'])==='in case'){ $inCaseCount++; } }
+    ?>
+    <!-- Premium Hero Header -->
+    <div class="w-full mt-8 px-4">
+        <div class="relative gradient-bg rounded-2xl shadow-sm p-8 md:p-10 overflow-hidden max-w-7xl mx-auto">
+            <div class="absolute top-0 right-0 w-72 h-72 bg-primary-100 rounded-full -mr-28 -mt-28 opacity-70 animate-[float_10s_ease-in-out_infinite]"></div>
+            <div class="absolute bottom-0 left-0 w-48 h-48 bg-primary-200 rounded-full -ml-16 -mb-16 opacity-60 animate-[float_7s_ease-in-out_infinite]"></div>
+            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-br from-primary-50 via-white to-primary-100 opacity-30 blur-3xl rounded-full"></div>
+            <div class="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-8">
+                <div class="max-w-2xl">
+                    <h1 class="text-3xl md:text-4xl font-light text-primary-900 tracking-tight">Your <span class="font-semibold">Complaints</span></h1>
+                    <p class="mt-4 text-gray-600 leading-relaxed">Review status, track updates, and monitor resolutions. Use the smart filters below to narrow results instantly.</p>
+                    <div class="mt-5 flex flex-wrap gap-3 text-xs text-primary-700/80 font-medium">
+                        <span class="px-3 py-1.5 rounded-full bg-white/70 backdrop-blur border border-primary-100 shadow-sm flex items-center gap-1"><i class="fa-solid fa-layer-group text-primary-500"></i> Organized Timeline</span>
+                        <span class="px-3 py-1.5 rounded-full bg-white/70 backdrop-blur border border-primary-100 shadow-sm flex items-center gap-1"><i class="fa-solid fa-magnifying-glass text-primary-500"></i> Smart Search</span>
+                        <span class="px-3 py-1.5 rounded-full bg-white/70 backdrop-blur border border-primary-100 shadow-sm flex items-center gap-1"><i class="fa-solid fa-chart-line text-primary-500"></i> Quick Insights</span>
+                    </div>
                 </div>
-                <div class="hidden md:flex space-x-2">
-                    <span class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium flex items-center">
-                        <span class="w-2 h-2 bg-green-500 rounded-full mr-2"></span> Resolved: 1
-                    </span>
-                    <span class="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-medium flex items-center">
-                        <span class="w-2 h-2 bg-yellow-500 rounded-full mr-2"></span> Pending: 0
-                    </span>
+                <div class="hidden md:flex flex-col gap-3 min-w-[260px]">
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-amber-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-amber-600 font-semibold">Pending</span><span class="mt-1 text-lg font-semibold text-amber-700"><?= $pendingComplaints ?></span></div>
+                        <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-green-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-green-600 font-semibold">Resolved</span><span class="mt-1 text-lg font-semibold text-green-700"><?= $resolvedCases ?></span></div>
+                        <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-red-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-red-600 font-semibold">Rejected</span><span class="mt-1 text-lg font-semibold text-red-700"><?= $rejectedComplaints ?></span></div>
+                        <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-blue-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-blue-600 font-semibold">In Case</span><span class="mt-1 text-lg font-semibold text-blue-700"><?= $inCaseCount ?></span></div>
+                    </div>
+                    <div class="text-[11px] text-primary-700/70 text-center">Status overview</div>
                 </div>
             </div>
         </div>
     </div>
     
     <!-- Filters & Search -->
-    <div class="w-full mt-6 px-4">
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-            <div class="flex flex-wrap justify-between items-center">
-                <div class="flex flex-wrap items-center gap-2 mb-2 md:mb-0">
-                    <button class="px-3 py-1 bg-primary-50 text-primary-700 rounded-lg text-sm font-medium border border-primary-100">All</button>
-                    <button class="px-3 py-1 text-gray-500 rounded-lg text-sm hover:bg-gray-50">Pending</button>
-                    <button class="px-3 py-1 text-gray-500 rounded-lg text-sm hover:bg-gray-50">Resolved</button>
-                    <button class="px-3 py-1 text-gray-500 rounded-lg text-sm hover:bg-gray-50">Recent</button>
-                </div>
-                
-                <div class="relative">
-                    <input 
-                        type="text" 
-                        placeholder="Search complaints..." 
-                        class="pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-300 w-full"
-                    >
-                    <div class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
-                        <i class="fas fa-search"></i>
+    <div class="w-full mt-8 px-4">
+        <div class="max-w-7xl mx-auto">
+            <div class="relative bg-white/90 backdrop-blur-sm border border-gray-100 rounded-2xl shadow-sm p-6 md:p-7 overflow-hidden">
+                <div class="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br from-primary-50 to-primary-100 rounded-full opacity-70"></div>
+                <div class="absolute -bottom-12 -left-12 w-40 h-40 bg-gradient-to-tr from-primary-50 to-primary-100 rounded-full opacity-60"></div>
+                <div class="relative z-10 space-y-5">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div class="flex items-center gap-3 text-primary-700/80 text-sm font-medium">
+                            <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary-50/70 border border-primary-100"><i class="fa-solid fa-magnifying-glass text-primary-500"></i> Search & Filter</span>
+                            <span class="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary-50/70 border border-primary-100"><i class="fa-solid fa-sliders text-primary-500"></i> Refine</span>
+                        </div>
+                        <a href="submit_complaint.php" class="group relative inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 text-white text-sm font-semibold shadow-sm hover:shadow-md transition-all">
+                            <i class="fa-solid fa-circle-plus text-white"></i>
+                            <span>Submit Complaint</span>
+                            <span class="absolute inset-0 rounded-xl ring-1 ring-inset ring-white/20"></span>
+                        </a>
+                    </div>
+                    <!-- Status Chips -->
+                    <div class="flex flex-wrap gap-2 pt-1" id="statusChips">
+                        <button type="button" data-status="" class="c-chip active px-3 py-1.5 text-xs font-medium rounded-full bg-primary-600 text-white shadow-sm">All</button>
+                        <button type="button" data-status="Pending" class="c-chip px-3 py-1.5 text-xs font-medium rounded-full bg-amber-50 text-amber-600 border border-amber-100 hover:bg-amber-100 transition">Pending</button>
+                        <button type="button" data-status="Resolved" class="c-chip px-3 py-1.5 text-xs font-medium rounded-full bg-green-50 text-green-600 border border-green-100 hover:bg-green-100 transition">Resolved</button>
+                        <button type="button" data-status="Rejected" class="c-chip px-3 py-1.5 text-xs font-medium rounded-full bg-red-50 text-red-600 border border-red-100 hover:bg-red-100 transition">Rejected</button>
+                        <button type="button" data-status="In Case" class="c-chip px-3 py-1.5 text-xs font-medium rounded-full bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 transition">In Case</button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                        <div class="md:col-span-5 relative group">
+                            <input id="searchInput" type="text" placeholder="Search by ID, title, status or description..." class="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200/80 bg-white/70 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 placeholder:text-gray-400 text-sm transition" />
+                            <i class="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-primary-400 group-focus-within:text-primary-500 transition"></i>
+                        </div>
+                        <div class="md:col-span-2 relative">
+                            <select id="monthFilter" class="w-full pl-3 pr-8 py-3 rounded-xl border border-gray-200 bg-white/70 text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 appearance-none">
+                                <option value="">All Months</option>
+                                <?php foreach(range(1,12) as $m): $mn=date('F',mktime(0,0,0,$m,1)); ?>
+                                    <option value="<?= str_pad($m,2,'0',STR_PAD_LEFT) ?>"><?= $mn ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <i class="fa-solid fa-caret-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-primary-400"></i>
+                        </div>
+                        <div class="md:col-span-2 relative">
+                            <select id="yearFilter" class="w-full pl-3 pr-8 py-3 rounded-xl border border-gray-200 bg-white/70 text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 appearance-none">
+                                <option value="">All Years</option>
+                                <?php $cy=date('Y'); for($y=$cy;$y>=$cy-5;$y--): ?>
+                                    <option value="<?= $y ?>"><?= $y ?></option>
+                                <?php endfor; ?>
+                            </select>
+                            <i class="fa-solid fa-caret-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-primary-400"></i>
+                        </div>
+                        <div class="md:col-span-2 relative">
+                            <select id="sortOrder" class="w-full pl-3 pr-8 py-3 rounded-xl border border-gray-200 bg-white/70 text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 appearance-none">
+                                <option value="desc">Newest First</option>
+                                <option value="asc">Oldest First</option>
+                            </select>
+                            <i class="fa-solid fa-caret-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-primary-400"></i>
+                        </div>
+                        <div class="md:col-span-1 flex">
+                            <button id="resetFilters" class="w-full inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl border border-primary-100 bg-primary-50/60 text-primary-600 text-sm font-medium hover:bg-primary-100 transition"><i class="fa-solid fa-rotate-left"></i><span class="hidden xl:inline">Reset</span></button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -347,422 +256,63 @@ session_start();
     </div>
 
     <!-- Complaints List -->
-    <div class="w-full mt-6 px-4 pb-10">
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-            <!-- Desktop View -->
-            <div class="hidden md:block overflow-x-auto">
-                <table class="w-full">
-                    <thead>
-                        <tr class="bg-gray-50 text-left">
-                            <th class="py-4 px-6 text-sm font-medium text-gray-600">Complaint ID</th>
-                            <th class="py-4 px-6 text-sm font-medium text-gray-600">Title</th>
-                            <th class="py-4 px-6 text-sm font-medium text-gray-600">Date Filed</th>
-                            <th class="py-4 px-6 text-sm font-medium text-gray-600">Status</th>
-                            <th class="py-4 px-6 text-sm font-medium text-gray-600">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr class="border-t border-gray-100 table-row">
-                            <td class="py-4 px-6 text-sm">COMP-001</td>
-                            <td class="py-4 px-6 text-sm font-medium">Noise disturbance</td>
-                            <td class="py-4 px-6 text-sm text-gray-500">May 10, 2025</td>
-                            <td class="py-4 px-6">
-                                <span class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium status-badge">
-                                    Resolved
-                                </span>
-                            </td>
-                            <td class="py-4 px-6">
-                                <button class="px-3 py-1 bg-primary-50 text-primary-600 rounded-lg text-sm font-medium hover:bg-primary-100 transition-colors flex items-center">
-                                    <i class="fas fa-eye mr-1"></i> View Details
-                                </button>
-                            </td>
-                        </tr>
-                        <tr class="border-t border-gray-100 table-row">
-                            <td class="py-4 px-6 text-sm">COMP-002</td>
-                            <td class="py-4 px-6 text-sm font-medium">Property damage claim</td>
-                            <td class="py-4 px-6 text-sm text-gray-500">May 12, 2025</td>
-                            <td class="py-4 px-6">
-                                <span class="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium status-badge">
-                                    Pending
-                                </span>
-                            </td>
-                            <td class="py-4 px-6">
-                                <button class="px-3 py-1 bg-primary-50 text-primary-600 rounded-lg text-sm font-medium hover:bg-primary-100 transition-colors flex items-center">
-                                    <i class="fas fa-eye mr-1"></i> View Details
-                                </button>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-            
-            <!-- Mobile View - Card Layout -->
-            <div class="md:hidden divide-y divide-gray-100">
-                <!-- Complaint Item -->
-                <div class="p-4 space-y-2">
-                    <div class="flex justify-between items-center">
-                        <span class="text-xs font-medium text-gray-500">COMP-001</span>
-                        <span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                            Resolved
+    <div class="w-full mt-8 px-4 pb-16">
+        <div class="max-w-7xl mx-auto bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden p-4 md:p-6">
+            <div id="complaintsContainer" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <?php foreach ($complaintsToDisplay as $complaint): 
+                    $status = $complaint['Status'];
+                    $statusClass = match($status){
+                        'Resolved' => 'text-green-700 bg-green-50 border border-green-200',
+                        'Rejected' => 'text-red-700 bg-red-50 border border-red-200',
+                        'Pending' => 'text-amber-700 bg-amber-50 border border-amber-200',
+                        'In Case' => 'text-blue-700 bg-blue-50 border border-blue-200',
+                        default => 'text-gray-700 bg-gray-50 border border-gray-200'
+                    };
+                    $fullDesc = $complaint['Complaint_Details'] ?? ''; $shortDesc = mb_strlen($fullDesc)>140? htmlspecialchars(mb_substr($fullDesc,0,137)).'…':htmlspecialchars($fullDesc);
+                    $filedDate = !empty($complaint['notification_created_at']) ? $complaint['notification_created_at'] : $complaint['Date_Filed'];
+                    // Resolution message
+                    $resMsg = match(strtolower($status)){
+                        'in case' => 'This complaint is under resolution by the Barangay Justice System.',
+                        'rejected' => 'This complaint is not part of the Barangay Justice System.',
+                        'pending' => 'This complaint is currently being processed.',
+                        'resolved' => 'This complaint was successfully resolved by the barangay.',
+                        default => 'No resolution information available.'
+                    };
+                ?>
+                <div class="complaint-card group relative bg-white/80 backdrop-blur rounded-xl border border-gray-100 p-4 flex flex-col gap-3 hover:-translate-y-[2px] hover:shadow-md transition-all" data-status="<?= strtolower($status) ?>" data-date="<?= htmlspecialchars($filedDate) ?>" data-id-text="<?= 'COMP-' . str_pad($complaint['Complaint_ID'],3,'0',STR_PAD_LEFT) ?>">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="flex flex-col">
+                            <span class="text-[11px] font-mono tracking-wide text-gray-500">
+                                <?= 'COMP-' . str_pad($complaint['Complaint_ID'], 3, '0', STR_PAD_LEFT); ?>
+                            </span>
+                            <h3 class="mt-1 font-medium text-gray-800 leading-snug line-clamp-2" title="<?= htmlspecialchars($complaint['Complaint_Title']) ?>"><?= htmlspecialchars($complaint['Complaint_Title']) ?></h3>
+                        </div>
+                        <span class="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold <?= $statusClass ?>">
+                            <?= htmlspecialchars($status) ?>
                         </span>
                     </div>
-                    <h3 class="font-medium">Noise disturbance</h3>
-                    <p class="text-sm text-gray-500">Filed on: May 10, 2025</p>
-                    <div class="pt-2">
-                        <button class="w-full px-3 py-2 bg-primary-50 text-primary-600 rounded-lg text-sm font-medium hover:bg-primary-100 transition-colors flex items-center justify-center">
-                            <i class="fas fa-eye mr-2"></i> View Details
-                        </button>
+                    <div class="text-xs text-gray-500">Filed on: <?= date('F j, Y', strtotime($filedDate)) ?></div>
+                    <p class="text-sm text-gray-600 leading-snug line-clamp-3" title="<?= htmlspecialchars($fullDesc) ?>" style="display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">
+                        <?= $shortDesc ?: '<span class=\'italic text-gray-400\'>No description provided.</span>' ?>
+                    </p>
+                    <div class="mt-auto pt-1 flex items-center justify-end">
+                        <a href="view_complaint_details.php?id=<?= $complaint['Complaint_ID'] ?>" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary-50 text-primary-600 text-xs font-medium hover:bg-primary-100 transition">
+                            <i class="fas fa-eye text-primary-500"></i> View Details
+                        </a>
                     </div>
                 </div>
-                
-                <!-- Complaint Item -->
-                <div class="p-4 space-y-2">
-                    <div class="flex justify-between items-center">
-                        <span class="text-xs font-medium text-gray-500">COMP-002</span>
-                        <span class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
-                            Pending
-                        </span>
-                    </div>
-                    <h3 class="font-medium">Property damage claim</h3>
-                    <p class="text-sm text-gray-500">Filed on: May 12, 2025</p>
-                    <div class="pt-2">
-                        <button class="w-full px-3 py-2 bg-primary-50 text-primary-600 rounded-lg text-sm font-medium hover:bg-primary-100 transition-colors flex items-center justify-center">
-                            <i class="fas fa-eye mr-2"></i> View Details
-                        </button>
-                    </div>
-                </div>
+                <?php endforeach; ?>
             </div>
-        </div>
-        
-        <!-- Pagination -->
-        <div class="mt-6 flex justify-center">
-            <nav class="flex items-center space-x-1">
-                <button class="p-2 rounded-md text-gray-400 hover:text-primary-600 hover:bg-primary-50 disabled:opacity-50" disabled>
-                    <i class="fas fa-chevron-left"></i>
-                </button>
-                <button class="px-3 py-1 rounded-md bg-primary-50 text-primary-600 font-medium">1</button>
-                <button class="px-3 py-1 rounded-md text-gray-500 hover:bg-gray-100">2</button>
-                <button class="p-2 rounded-md text-gray-400 hover:text-primary-600 hover:bg-primary-50">
-                    <i class="fas fa-chevron-right"></i>
-                </button>
-            </nav>
-        </div>
-        
-        <div class="mt-6 flex justify-center">
-            <button onclick="window.location.href='home-resident.php'" class="px-4 py-2 text-gray-500 hover:text-gray-700 flex items-center transition-colors">
-                <i class="fas fa-arrow-left mr-2"></i> Back to Dashboard
-            </button>
-        </div>
-    </div>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Filter buttons functionality
-            const filterButtons = document.querySelectorAll('.px-3.py-1.rounded-lg.text-sm');
-            
-            filterButtons.forEach(button => {
-                button.addEventListener('click', function() {
-                    // Reset all buttons
-                    filterButtons.forEach(btn => {
-                        btn.classList.remove('bg-primary-50', 'text-primary-700', 'border', 'border-primary-100');
-                        btn.classList.add('text-gray-500');
-                    });
-                    
-                    // Set active button
-                    this.classList.remove('text-gray-500');
-                    this.classList.add('bg-primary-50', 'text-primary-700', 'border', 'border-primary-100');
-                });
-            });
-            
-            // Search functionality
-            const searchInput = document.querySelector('input[type="text"]');
-            const tableRows = document.querySelectorAll('.table-row');
-            const mobileCards = document.querySelectorAll('.md\\:hidden .p-4');
-            
-            searchInput.addEventListener('input', function() {
-                const query = this.value.toLowerCase();
-                
-                // Filter desktop rows
-                tableRows.forEach(row => {
-                    const title = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
-                    const id = row.querySelector('td:nth-child(1)').textContent.toLowerCase();
-                    
-                    if (title.includes(query) || id.includes(query)) {
-                        row.style.display = '';
-                    } else {
-                        row.style.display = 'none';
-                    }
-                });
-                
-                // Filter mobile cards
-                mobileCards.forEach(card => {
-                    const title = card.querySelector('h3').textContent.toLowerCase();
-                    const id = card.querySelector('.text-xs.font-medium').textContent.toLowerCase();
-                    
-                    if (title.includes(query) || id.includes(query)) {
-                        card.style.display = '';
-                    } else {
-                        card.style.display = 'none';
-                    }
-                });
-            });
-            
-            // Modal functionality for "View Details"
-            const viewButtons = document.querySelectorAll('button:not([onclick])');
-            const body = document.body;
-            
-            viewButtons.forEach(button => {
-                button.addEventListener('click', function() {
-                    const isDesktop = this.closest('tr') !== null;
-                    let complaintId, complaintTitle, complaintStatus;
-                    
-                    if (isDesktop) {
-                        const row = this.closest('tr');
-                        complaintId = row.querySelector('td:nth-child(1)').textContent;
-                        complaintTitle = row.querySelector('td:nth-child(2)').textContent;
-                        complaintStatus = row.querySelector('td:nth-child(4) span').textContent.trim();
-                    } else {
-                        const card = this.closest('.p-4');
-                        complaintId = card.querySelector('.text-xs.font-medium').textContent;
-                        complaintTitle = card.querySelector('h3').textContent;
-                        complaintStatus = card.querySelector('.px-2.py-1').textContent.trim();
-                    }
-                    
-                    // Create modal
-                    const modal = createModal(complaintId, complaintTitle, complaintStatus);
-                    body.appendChild(modal);
-                    
-                    // Show modal with animation
-                    setTimeout(() => {
-                        modal.querySelector('.fixed').classList.remove('opacity-0');
-                        modal.querySelector('.transform').classList.remove('scale-95');
-                        modal.querySelector('.transform').classList.add('scale-100');
-                    }, 10);
-                    
-                    // Close button functionality
-                    modal.querySelector('button').addEventListener('click', () => {
-                        closeModal(modal);
-                    });
-                    
-                    // Close on click outside
-                    modal.addEventListener('click', (e) => {
-                        if (e.target === modal.querySelector('.fixed')) {
-                            closeModal(modal);
-                        }
-                    });
-                });
-            });
-            
-            function createModal(id, title, status) {
-                const modal = document.createElement('div');
-                modal.innerHTML = `
-                    <div class="fixed inset-0 bg-gray-900 bg-opacity-50 flex justify-center items-center p-4 z-50 transition-opacity duration-300 opacity-0">
-                        <div class="bg-white rounded-xl shadow-xl max-w-md w-full transform transition-transform duration-300 scale-95">
-                            <div class="border-b border-gray-100 px-5 py-4 flex justify-between items-center">
-                                <h3 class="font-medium text-lg">Complaint Details</h3>
-                                <button class="text-gray-400 hover:text-gray-600">
-                                    <i class="fas fa-times"></i>
-                                </button>
-                            </div>
-                            <div class="p-5 space-y-4">
-                                <div>
-                                    <p class="text-sm text-gray-500">Complaint ID</p>
-                                    <p class="font-medium">${id}</p>
-                                </div>
-                                <div>
-                                    <p class="text-sm text-gray-500">Title</p>
-                                    <p class="font-medium">${title}</p>
-                                </div>
-                                <div>
-                                    <p class="text-sm text-gray-500">Status</p>
-                                    <span class="px-3 py-1 ${status === 'Resolved' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'} rounded-full text-xs font-medium inline-block mt-1">
-                                        ${status}
-                                    </span>
-                                </div>
-                                <div>
-                                    <p class="text-sm text-gray-500">Description</p>
-                                    <p class="text-sm mt-1">This is a detailed description of the complaint that was filed. It includes all the information provided by the resident when submitting the complaint.</p>
-                                </div>
-                                <div>
-                                    <p class="text-sm text-gray-500">Date Filed</p>
-                                    <p class="font-medium">May ${status === 'Resolved' ? '10' : '12'}, 2025</p>
-                                </div>
-                                <div>
-                                    <p class="text-sm text-gray-500">Resolution Notes</p>
-                                    <p class="text-sm mt-1">${status === 'Resolved' ? 'This complaint was resolved on May 12, 2025. The issue was addressed by the barangay officials.' : 'This complaint is still being processed by the barangay officials.'}</p>
-                                </div>
-                            </div>
-                            <div class="border-t border-gray-100 px-5 py-4 flex justify-end">
-                                <button class="px-4 py-2 bg-primary-50 text-primary-600 rounded-lg text-sm font-medium hover:bg-primary-100 transition-colors">
-                                    Close
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                return modal;
-            }
-            
-            function closeModal(modal) {
-                modal.querySelector('.fixed').classList.add('opacity-0');
-                modal.querySelector('.transform').classList.remove('scale-100');
-                modal.querySelector('.transform').classList.add('scale-95');
-                
-                setTimeout(() => {
-                    modal.remove();
-                }, 300);
-            }
-            
-            // Mobile menu toggle
-            const menuButton = document.getElementById('mobile-menu-button');
-            const mobileMenu = document.getElementById('mobile-menu');
-            
-            if (menuButton && mobileMenu) {
-                menuButton.addEventListener('click', function() {
-                    this.classList.toggle('active');
-                    if (mobileMenu.style.transform === 'translateY(0%)') {
-                        mobileMenu.style.transform = 'translateY(-100%)';
-                    } else {
-                        mobileMenu.style.transform = 'translateY(0%)';
-                    }
-                });
-            }
-        });
+            <div class="mt-6 flex items-center justify-between text-xs text-gray-600 flex-col md:flex-row gap-3">
+                <div id="visibleCount" class="px-2.5 py-1 rounded-full bg-primary-50 text-primary-600 border border-primary-100 font-medium">Showing <?= count($complaintsToDisplay) ?> items</div>
+                <div class="flex items-center gap-1">
+                    <!-- Pagination (unchanged logic) -->
+                    <a href="?page=<?= max(1, $page - 1) ?>" class="px-3 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition <?= $page <= 1 ? 'opacity-50 pointer-events-none' : '' ?>">Prev</a>
+                    <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                        <a href="?page=<?= $i ?>" class="px-3 py-1 rounded-lg text-gray-600 border <?= $page == $i ? 'bg-primary-500 text-white border-primary-500' : 'border-gray-200 hover:bg-gray-50' ?> transition text-xs font-medium"><?= $i ?></a>
+                    <?php endfor; ?>
+    
     </script>
-    
-    <!-- Chatbot Button and Container -->
-    <button class="chatbot-button" id="chatbotButton" aria-label="Open case assistant chatbot">
-        <div class="pulse"></div>
-        <i class="fas fa-robot"></i>
-    </button>
-    
-    <div class="chatbot-container" id="chatbotContainer">
-        <div class="chatbot-header">
-            <h3><i class="fas fa-robot"></i> Case Assistant</h3>
-            <button class="chatbot-close" id="chatbotClose" aria-label="Close chatbot">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <div class="chatbot-body" id="chatbotBody">
-            <!-- Bot welcome message -->
-            <div class="chat-message bot-message">
-                <div class="bot-avatar">
-                    <i class="fas fa-robot"></i>
-                </div>
-                <div class="message-content">
-                    Hi there! I'm your Case Assistant. How can I help you with your barangay cases today?
-                    <div class="message-time">Just now</div>
-                </div>
-            </div>
-        </div>
-        <div class="chatbot-footer">
-            <input type="text" class="chatbot-input" id="chatbotInput" placeholder="Type your question here..." aria-label="Type your message">
-            <button class="send-button" id="sendButton" aria-label="Send message">
-                <i class="fas fa-paper-plane"></i>
-            </button>
-        </div>
-    </div>
-    
-    <script>
-        // Chatbot functionality
-        document.addEventListener('DOMContentLoaded', function() {
-            const chatbotButton = document.getElementById('chatbotButton');
-            const chatbotContainer = document.getElementById('chatbotContainer');
-            const chatbotClose = document.getElementById('chatbotClose');
-            const chatbotInput = document.getElementById('chatbotInput');
-            const sendButton = document.getElementById('sendButton');
-            const chatbotBody = document.getElementById('chatbotBody');
-            
-            // Toggle chatbot visibility
-            chatbotButton.addEventListener('click', function() {
-                chatbotContainer.classList.toggle('active');
-                chatbotInput.focus();
-            });
-            
-            // Close chatbot
-            chatbotClose.addEventListener('click', function() {
-                chatbotContainer.classList.remove('active');
-            });
-            
-            // Send message function
-            function sendMessage() {
-                const message = chatbotInput.value.trim();
-                if (message === '') return;
-                
-                // Add user message to chat
-                const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                const userMessageHTML = `
-                    <div class="chat-message user-message">
-                        <div class="message-content">
-                            ${message}
-                            <div class="message-time">${timestamp}</div>
-                        </div>
-                    </div>
-                `;
-                
-                chatbotBody.innerHTML += userMessageHTML;
-                chatbotInput.value = '';
-                chatbotBody.scrollTop = chatbotBody.scrollHeight;
-                
-                // Simulate bot typing
-                setTimeout(() => {
-                    const botResponse = getBotResponse(message);
-                    const botMessageHTML = `
-                        <div class="chat-message bot-message">
-                            <div class="bot-avatar">
-                                <i class="fas fa-robot"></i>
-                            </div>
-                            <div class="message-content">
-                                ${botResponse}
-                                <div class="message-time">${timestamp}</div>
-                            </div>
-                        </div>
-                    `;
-                    
-                    chatbotBody.innerHTML += botMessageHTML;
-                    chatbotBody.scrollTop = chatbotBody.scrollHeight;
-                }, 800);
-            }
-            
-            // Send message on button click
-            sendButton.addEventListener('click', sendMessage);
-            
-            // Send message on Enter key
-            chatbotInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    sendMessage();
-                }
-            });
-            
-            // Simple bot response function
-            function getBotResponse(message) {
-                message = message.toLowerCase();
-                
-                if (message.includes('hello') || message.includes('hi') || message.includes('hey')) {
-                    return 'Hello! How can I assist you with your case today?';
-                }
-                else if (message.includes('case status') || message.includes('status')) {
-                    return 'To check your case status, please go to the "View Cases" section where you can see all your active and resolved cases.';
-                }
-                else if (message.includes('hearing') || message.includes('schedule')) {
-                    return 'Your next hearing is scheduled for May 20, 2025. You can view all upcoming hearings in the calendar section of your dashboard.';
-                }
-                else if (message.includes('mediation') || message.includes('mediator')) {
-                    return 'Mediation sessions are conducted by trained Lupong Tagapamayapa members. Your upcoming mediation session is scheduled for May 18, 2025.';
-                }
-                else if (message.includes('complaint') || message.includes('file') || message.includes('submit')) {
-                    return 'To file a new complaint, click on the "Submit Complaint" button in the Quick Actions section of your dashboard.';
-                }
-                else if (message.includes('contact') || message.includes('barangay') || message.includes('office')) {
-                    return 'You can contact the Barangay Office at (123) 456-7890 or visit them during office hours: Monday to Friday, 8:00 AM to 5:00 PM.';
-                }
-                else if (message.includes('thank')) {
-                    return 'You\'re welcome! Is there anything else I can help you with?';
-                }
-                else {
-                    return 'I\'m not sure I understand. Could you please rephrase your question? You can ask about case status, hearings, complaints, or contact information.';
-                }
-            }
-        });
-    </script>
+    <?php include("../chatbot/bpamis_case_assistant.php")?>
 </body>
 </html>

@@ -5,32 +5,122 @@
  */
 session_start();
 
+// Include database connection
+include '../server/server.php';
+
 // Get the requested form
 $form_id = isset($_GET['form']) ? $_GET['form'] : '';
 $case_id = isset($_GET['case']) ? $_GET['case'] : '';
 
-// In a real app, you would fetch form details and case details from the database
-// For now, we'll use hardcoded data
+// Fetch form details based on DILG Katarungang Pambarangay Handbook
 $formTitle = '';
 $formDescription = '';
 
-switch ($form_id) {
-    case 'KP-Form-01':
-        $formTitle = 'Complaint Form';
-        $formDescription = 'Official form to be filled out by the complainant to initiate a case.';
-        break;
-    case 'KP-Form-02':
-        $formTitle = 'Summons';
-        $formDescription = 'Official notice requiring the respondent to appear before the Lupong Tagapamayapa.';
-        break;
-    case 'KP-Form-07':
-        $formTitle = 'Amicable Settlement';
-        $formDescription = 'Written agreement between the parties resolving their dispute.';
-        break;
-    default:
-        $formTitle = 'KP Form';
-        $formDescription = 'Katarungang Pambarangay Form';
+// Fetch cases from database
+$cases = [];
+$sql = "SELECT 
+    c.Case_ID,
+    ci.Complaint_Title,
+    ci.Date_Filed,
+    c.Case_Status,
+    CASE 
+        WHEN ci.Resident_ID IS NOT NULL THEN ri.First_Name
+        WHEN ci.External_Complainant_ID IS NOT NULL THEN eci.first_name
+        ELSE 'Unknown'
+    END AS Complainant_First,
+    CASE 
+        WHEN ci.Resident_ID IS NOT NULL THEN ri.Last_Name
+        WHEN ci.External_Complainant_ID IS NOT NULL THEN eci.last_name
+        ELSE 'Unknown'
+    END AS Complainant_Last,
+    resp.First_Name AS Respondent_First,
+    resp.Last_Name AS Respondent_Last
+FROM case_info c
+JOIN complaint_info ci ON c.Complaint_ID = ci.Complaint_ID
+LEFT JOIN resident_info ri ON ci.Resident_ID = ri.Resident_ID
+LEFT JOIN external_complainant eci ON ci.External_Complainant_ID = eci.external_complaint_id
+LEFT JOIN resident_info resp ON ci.Respondent_ID = resp.Resident_ID
+ORDER BY c.Date_Opened DESC";
+
+$result = $conn->query($sql);
+if ($result && $result->num_rows > 0) {
+    while ($row = $result->fetch_assoc()) {
+        $cases[] = $row;
+    }
 }
+
+// If no cases found, try a simpler query as fallback
+if (empty($cases)) {
+    $fallback_sql = "SELECT 
+        c.Case_ID,
+        ci.Complaint_Title,
+        ci.Date_Filed,
+        c.Case_Status,
+        'Unknown' AS Complainant_First,
+        'Unknown' AS Complainant_Last,
+        'Unknown' AS Respondent_First,
+        'Unknown' AS Respondent_Last
+    FROM case_info c
+    JOIN complaint_info ci ON c.Complaint_ID = ci.Complaint_ID
+    ORDER BY c.Date_Opened DESC";
+    
+    $fallback_result = $conn->query($fallback_sql);
+    if ($fallback_result && $fallback_result->num_rows > 0) {
+        while ($row = $fallback_result->fetch_assoc()) {
+            $cases[] = $row;
+        }
+    }
+}
+
+// Debug: Check if we're getting any results
+if (empty($cases)) {
+    // Try a simpler query to see if there are any cases at all
+    $debug_sql = "SELECT COUNT(*) as count FROM case_info";
+    $debug_result = $conn->query($debug_sql);
+    if ($debug_result) {
+        $debug_count = $debug_result->fetch_assoc()['count'];
+        error_log("Debug: Found $debug_count cases in case_info table");
+    }
+    
+    // Check if there are any complaints
+    $debug_complaints_sql = "SELECT COUNT(*) as count FROM complaint_info";
+    $debug_complaints_result = $conn->query($debug_complaints_sql);
+    if ($debug_complaints_result) {
+        $debug_complaints_count = $debug_complaints_result->fetch_assoc()['count'];
+        error_log("Debug: Found $debug_complaints_count complaints in complaint_info table");
+    }
+}
+
+// Mapping from form_id to PDF filename
+$formPdfMap = [
+    'KP-Form-01' => 'KP Form 1 - Notice to Constitute Lupon.pdf',
+    'KP-Form-02' => 'KP Form 2 - Appointment.pdf',
+    'KP-Form-03' => 'KP Form 3.pdf',
+    'KP-Form-04' => 'KP Form 4 - List of Appointed Lupon Members.pdf',
+    'KP-Form-05' => 'KP Form 5 - Oath of Office.pdf',
+    'KP-Form-06' => 'KP Form 6.pdf',
+    'KP-Form-07' => 'KP Form 7.pdf',
+    'KP-Form-08' => 'KP Form 8.pdf',
+    'KP-Form-09' => 'KP Form 9.pdf',
+    'KP-Form-10' => 'KP Form 10.pdf',
+    'KP-Form-11' => 'KP Form 11.pdf',
+    'KP-Form-12' => 'KP Form 12.pdf',
+    'KP-Form-13' => 'KP Form 13.pdf',
+    'KP-Form-14' => 'KP Form 14.pdf',
+    'KP-Form-15' => 'KP Form 15.pdf',
+    'KP-Form-16' => 'KP Form 16.pdf',
+    'KP-Form-17' => 'KP Form 17.pdf',
+    'KP-Form-18' => 'KP Form 18.pdf',
+    'KP-Form-19' => 'KP Form 19.pdf',
+    'KP-Form-20' => 'KP Form 20.pdf',
+    'KP-Form-20-A' => 'KP Form 20-A.pdf',
+    'KP-Form-20-B' => 'KP Form 20-B.pdf',
+    'KP-Form-21' => 'KP Form 21.pdf',
+    'KP-Form-22' => 'KP Form 22.pdf',
+    'KP-Form-23' => 'KP Form 23.pdf',
+    'KP-Form-24' => 'KP Form 24.pdf',
+    'KP-Form-25' => 'KP Form 25.pdf',
+];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -40,7 +130,8 @@ switch ($form_id) {
     <title><?= $formTitle ?> - Barangay Panducot</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/js/all.min.js"></script>
-    <?php include '../includes/case_assistant_styles.php'; ?>
+   
+    <?php include 'sidebar_.php';?>
     <style>
         @media print {
             .no-print {
@@ -65,7 +156,7 @@ switch ($form_id) {
     </style>
 </head>
 <body class="bg-blue-50">
-    <?php include '../includes/barangay_official_nav.php'; ?>
+    <?php include '../includes/barangay_official_sec_nav.php'; ?>
     <div class="container mx-auto mt-10 no-print">
         <div class="bg-white p-5 shadow-md rounded-lg">
             <h2 class="text-2xl font-semibold text-blue-800 mb-6"><?= $formTitle ?></h2>
@@ -77,166 +168,123 @@ switch ($form_id) {
             <div class="mb-6">
                 <form method="get" class="space-y-4">
                     <div>
-                        <label for="form" class="block text-sm font-medium text-gray-700">Select Form</label>
-                        <select id="form" name="form" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm">
-                            <option value="KP-Form-01" <?= ($form_id == 'KP-Form-01') ? 'selected' : '' ?>>KP-Form-01: Complaint Form</option>
-                            <option value="KP-Form-02" <?= ($form_id == 'KP-Form-02') ? 'selected' : '' ?>>KP-Form-02: Summons</option>
-                            <option value="KP-Form-03" <?= ($form_id == 'KP-Form-03') ? 'selected' : '' ?>>KP-Form-03: Notice of Hearing (Mediation)</option>
-                            <option value="KP-Form-04" <?= ($form_id == 'KP-Form-04') ? 'selected' : '' ?>>KP-Form-04: Notice of Hearing (Conciliation)</option>
-                            <option value="KP-Form-05" <?= ($form_id == 'KP-Form-05') ? 'selected' : '' ?>>KP-Form-05: Agreement for Arbitration</option>
-                            <option value="KP-Form-06" <?= ($form_id == 'KP-Form-06') ? 'selected' : '' ?>>KP-Form-06: Arbitration Award</option>
-                            <option value="KP-Form-07" <?= ($form_id == 'KP-Form-07') ? 'selected' : '' ?>>KP-Form-07: Amicable Settlement</option>
-                            <option value="KP-Form-08" <?= ($form_id == 'KP-Form-08') ? 'selected' : '' ?>>KP-Form-08: Certification to File Action</option>
-                            <option value="KP-Form-09" <?= ($form_id == 'KP-Form-09') ? 'selected' : '' ?>>KP-Form-09: Notice of Execution</option>
-                        </select>
+                        <?php
+                        // Display the selected KP form name and description
+                        $formNames = [
+                            'KP-Form-01' => 'Notice to Constitute the Lupon',
+                            'KP-Form-02' => 'Appointment Letter',
+                            'KP-Form-03' => 'Notice of Appointment',
+                            'KP-Form-04' => 'List of Appointed Lupon Members',
+                            'KP-Form-05' => 'Lupon Member Oath Statement',
+                            'KP-Form-06' => 'Withdrawal of Appointment',
+                            'KP-Form-07' => 'Complainant\'s Form',
+                            'KP-Form-08' => 'Notice of Hearing',
+                            'KP-Form-09' => 'Summon for the Respondent',
+                            'KP-Form-10' => 'Notice for Constitution of Pangkat',
+                            'KP-Form-11' => 'Notice to Chosen Pangkat Member',
+                            'KP-Form-12' => 'Notice of Hearing (Conciliation Proceedings)',
+                            'KP-Form-13' => 'Subpoena Letter',
+                            'KP-Form-14' => 'Agreement for Arbitration',
+                            'KP-Form-15' => 'Arbitration Award',
+                            'KP-Form-16' => 'Amicable Settlement',
+                            'KP-Form-17' => 'Repudiation',
+                            'KP-Form-18' => 'Notice of Hearing for Complainant',
+                            'KP-Form-19' => 'Notice of Hearing for Respondent',
+                            'KP-Form-20' => 'Certification to File Action (from Lupon Secretary)',
+                            'KP-Form-21' => 'Certification to File Action (from Pangkat Secretary)',
+                            'KP-Form-22' => 'Certification to File Action',
+                            'KP-Form-23' => 'Certification to Bar Action',
+                            'KP-Form-24' => 'Certification to Bar Counterclaim',
+                            'KP-Form-25' => 'Motion for Execution',
+                            'KP-Form-26' => 'Notice of Hearing (Re: Motion for Execution)',
+                            'KP-Form-27' => 'Notice of Execution',
+                            'KP-Form-28' => 'Monthly Transmittal of Final Reports',
+                        ];
+                        if ($form_id && isset($formNames[$form_id])) {
+                            echo '<div class="text-lg font-semibold text-blue-800">' . htmlspecialchars($form_id) . ': ' . htmlspecialchars($formNames[$form_id]) . '</div>';
+                        } else {
+                            echo '<div class="text-lg text-red-600">No KP form selected. Please select a form from the main list.</div>';
+                        }
+                        ?>
                     </div>
                     
                     <div>
                         <label for="case" class="block text-sm font-medium text-gray-700">Select Case</label>
                         <select id="case" name="case" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm">
                             <option value="">-- Select a Case --</option>
-                            <option value="KP-2025-001">KP-2025-001: Property Boundary Dispute</option>
-                            <option value="KP-2025-002">KP-2025-002: Unpaid Debt</option>
-                            <option value="KP-2025-003">KP-2025-003: Noise Complaint</option>
+                            <?php if (empty($cases)): ?>
+                                <option value="" disabled>No cases available in the database</option>
+                                <?php if (isset($_GET['debug'])): ?>
+                                    <div class="mt-2 text-sm text-red-600">
+                                        Debug: Found <?= count($cases) ?> cases. 
+                                        Check error logs for more details.
+                                    </div>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <?php foreach ($cases as $case): ?>
+                                    <option value="<?= $case['Case_ID'] ?>" <?= ($case_id == $case['Case_ID']) ? 'selected' : '' ?>>
+                                        <?= $case['Case_ID'] ?>: <?= htmlspecialchars($case['Complaint_Title']) ?> 
+                                        (<?= htmlspecialchars($case['Complainant_First'] . ' ' . $case['Complainant_Last']) ?> vs 
+                                        <?= htmlspecialchars($case['Respondent_First'] . ' ' . $case['Respondent_Last']) ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </select>
+                        <?php if (empty($cases)): ?>
+                            <div class="mt-2 text-sm text-amber-600">
+                                <i class="fas fa-info-circle mr-1"></i>
+                                No cases found. Please ensure there are cases in the database.
+                            </div>
+                        <?php endif; ?>
                     </div>
                     
                     <div>
-                        <button type="submit" class="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700">
-                            <i class="fas fa-file-alt mr-1"></i> Generate Form
-                        </button>
+                    
+                        <?php
+$pdfFile = isset($formPdfMap[$form_id]) ? $formPdfMap[$form_id] : '';
+if ($pdfFile && file_exists(__DIR__ . '/KP-Forms/' . $pdfFile)) {
+    echo '<a href="KP-Forms/' . rawurlencode($pdfFile) . '" target="_blank" class="ml-2 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700"><i class="fas fa-file-alt mr-1"></i> Print Form</a>';
+} else {
+    echo '<button disabled class="ml-2 bg-gray-400 text-white py-2 px-4 rounded-lg cursor-not-allowed flex items-center"><i class="fas fa-file-alt mr-1"></i> Print Form</button>';
+}
+?>
+                        <a href="../SecMenu/KP-Forms/fill_kp_forms.php" class="ml-2 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700">
+                            <i class="fas fa-note-sticky mr-1"></i> Fill Out Form
+                        </a>
                         <a href="view_kp_forms.php" class="ml-2 bg-gray-500 text-white py-2 px-4 rounded-lg hover:bg-gray-600">
                             Back to Forms
                         </a>
                     </div>
                 </form>
             </div>
-            <?php else: ?>
-            <!-- Form Preview -->
-            <div class="mb-6 flex justify-between">
-                <button onclick="window.print()" class="bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700">
-                    <i class="fas fa-print mr-1"></i> Print Form
-                </button>
-                <a href="print_kp_forms.php" class="bg-gray-500 text-white py-2 px-4 rounded-lg hover:bg-gray-600">
-                    <i class="fas fa-arrow-left mr-1"></i> Back
-                </a>
-            </div>
+       
+            
             <?php endif; ?>
         </div>
     </div>
     
     <?php if ($case_id): ?>
-    <!-- Printable Form -->
-    <div class="print-container max-w-4xl mx-auto mt-8 mb-8 bg-white p-8 shadow-lg border">
-        <div class="print-header">
-            <div class="text-center mb-8">
-                <h3 class="text-xl font-bold">REPUBLIC OF THE PHILIPPINES</h3>
-                <h4 class="text-lg">PROVINCE OF PAMPANGA</h4>
-                <h4 class="text-lg">MUNICIPALITY OF SAN SIMON</h4>
-                <h4 class="text-lg font-bold">BARANGAY PANDUCOT</h4>
-                <h5 class="text-lg mt-6 font-bold">OFFICE OF THE LUPONG TAGAPAMAYAPA</h5>
-            </div>
-            
-            <div class="text-center my-8">
-                <h2 class="text-2xl font-bold border-b-2 border-t-2 border-black py-2"><?= $formTitle ?></h2>
-                <p class="text-sm mt-2"><?= $form_id ?></p>
-            </div>
-        </div>
-        
-        <?php if ($form_id == 'KP-Form-01'): // Complaint Form ?>
-            <div class="form-field">
-                <p>Case No: <u>&nbsp; <?= $case_id ?> &nbsp;</u></p>
-                <p>For: <u>&nbsp; Property Boundary Dispute &nbsp;</u></p>
-            </div>
-            
-            <div class="form-field">
-                <p><b>Complainant/s:</b> <u>&nbsp; Maria Garcia &nbsp;</u></p>
-                <p><b>Respondent/s:</b> <u>&nbsp; Roberto Reyes &nbsp;</u></p>
-            </div>
-            
-            <div class="form-field mt-8">
-                <h3 class="font-bold text-center mb-4">COMPLAINT</h3>
-                <p>I/WE hereby complain against the above named respondent/s for violating my/our rights and interests in the following manner:</p>
-                <p class="my-4 border-b border-black">&nbsp; The respondent has constructed a fence that encroaches approximately 2 meters into my property. &nbsp;</p>
-                <p class="my-4 border-b border-black">&nbsp; Despite several verbal requests to adjust the fence to the correct boundary line, the respondent has refused to take action. &nbsp;</p>
-                <p class="my-4 border-b border-black">&nbsp; This encroachment restricts access to a portion of my property and has damaged my garden. &nbsp;</p>
-            </div>
-            
-            <div class="form-field mt-8">
-                <p>THEREFORE, I/WE pray that the respondent/s be summoned, and that this complaint be heard and resolved in accordance with law.</p>
-                
-                <div class="mt-12 flex justify-between">
-                    <div class="text-center w-1/2">
-                        <p class="border-t border-black pt-2">Complainant's Signature</p>
-                    </div>
-                    <div class="text-center w-1/2">
-                        <p><?= date('F d, Y') ?></p>
-                        <p class="border-t border-black pt-2">Date</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="form-field mt-12">
-                <h3 class="font-bold mb-4">ACTION TAKEN:</h3>
-                <p>[ ] Complaint settled at mediation stage</p>
-                <p>[ ] Complaint referred to conciliation</p>
-                <p>[ ] No conciliation/settlement reached</p>
-                <p>[ ] Certificate to File Action issued</p>
-                
-                <div class="mt-12 text-center">
-                    <p class="border-t border-black pt-2 w-64 mx-auto">Punong Barangay/Lupon Chairman</p>
-                </div>
-            </div>
-        
-        <?php elseif ($form_id == 'KP-Form-07'): // Amicable Settlement ?>
-            <div class="form-field">
-                <p>Case No: <u>&nbsp; <?= $case_id ?> &nbsp;</u></p>
-                <p>For: <u>&nbsp; Property Boundary Dispute &nbsp;</u></p>
-            </div>
-            
-            <div class="form-field">
-                <p><b>Complainant/s:</b> <u>&nbsp; Maria Garcia &nbsp;</u></p>
-                <p><b>Respondent/s:</b> <u>&nbsp; Roberto Reyes &nbsp;</u></p>
-            </div>
-            
-            <div class="form-field mt-8">
-                <h3 class="font-bold text-center mb-4">AMICABLE SETTLEMENT</h3>
-                <p>We, the undersigned complainant/s and respondent/s in the above-captioned case, do hereby agree to settle our dispute as follows:</p>
-                <p class="my-4 border-b border-black">&nbsp; The respondent agrees to relocate the fence to the correct property boundary within 30 days from this date. &nbsp;</p>
-                <p class="my-4 border-b border-black">&nbsp; The respondent will repair any damage caused to the complainant's garden. &nbsp;</p>
-                <p class="my-4 border-b border-black">&nbsp; Both parties agree to have the boundary surveyed by a licensed surveyor, with costs shared equally. &nbsp;</p>
-                <p class="my-4 border-b border-black">&nbsp; Both parties agree to respect the property boundary as established by the survey. &nbsp;</p>
-            </div>
-            
-            <div class="form-field mt-8">
-                <p>We hereby bind ourselves to comply with the above terms and conditions.</p>
-                
-                <div class="mt-12 flex justify-between">
-                    <div class="text-center w-1/2">
-                        <p>Maria Garcia</p>
-                        <p class="border-t border-black pt-2">Complainant</p>
-                    </div>
-                    <div class="text-center w-1/2">
-                        <p>Roberto Reyes</p>
-                        <p class="border-t border-black pt-2">Respondent</p>
-                    </div>
-                </div>
-                
-                <div class="mt-12 text-center">
-                    <p>ATTESTED:</p>
-                    <p class="mt-8">Juan Dela Paz</p>
-                    <p class="border-t border-black pt-2 w-64 mx-auto">Punong Barangay/Lupon Chairman</p>
-                </div>
-            </div>
-        
-        <?php else: ?>
-            <div class="form-field">
-                <p class="text-center">Preview for <?= $form_id ?> form is not available in this demo.</p>
-                <p class="text-center">In a complete implementation, this would display the appropriate form based on the form type selected.</p>
-            </div>
-        <?php endif; ?>
-    </div>    <?php endif; ?>
+    <?php
+    // Fetch selected case details
+    $selectedCase = null;
+    foreach ($cases as $case) {
+        if ($case['Case_ID'] == $case_id) {
+            $selectedCase = $case;
+            break;
+        }
+    }
     
-    <?php include '../includes/case_assistant.php'; ?>
+    // Check if case was found
+    if (!$selectedCase) {
+        echo '<div class="container mx-auto mt-10 no-print">';
+        echo '<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">';
+        echo '<strong>Error:</strong> Case not found. Please select a valid case.';
+        echo '</div>';
+        echo '</div>';
+        exit;
+    }
+    ?>
+        <?php endif; ?>
+    
 </body>
 </html>

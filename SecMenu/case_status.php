@@ -1,8 +1,5 @@
 <?php
-/**
- * Case Status Page
- * Barangay Panducot Adjudication Management Information System
- */
+include '../server/server.php'; 
 session_start();
 ?>
 <!DOCTYPE html>
@@ -13,10 +10,10 @@ session_start();
     <title>Case Status</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/js/all.min.js"></script>
-    <?php include '../includes/case_assistant_styles.php'; ?>
+
 </head>
 <body class="bg-blue-50">
-    <?php include '../includes/barangay_official_nav.php'; ?>
+    <?php include '../includes/barangay_official_sec_nav.php'; ?>
     <div class="container mx-auto mt-10 p-5 bg-white shadow-md rounded-lg">
         <h2 class="text-2xl font-semibold text-blue-800 mb-4">Case Status Information</h2>
 
@@ -29,11 +26,13 @@ session_start();
         </div>
         
         <!-- Case Status Filter -->
-        <div class="mb-4 flex space-x-2">
-            <button class="px-4 py-2 bg-blue-600 text-white rounded-lg">All Cases</button>
+        <div class="mb-4 flex space-x-2">       
+            <button class="px-4 py-2 bg-blue-600 text-white rounded-lg active-status">All Cases</button>
             <button class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg">Open</button>
             <button class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg">Pending Hearing</button>
             <button class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg">Mediation</button>
+            <button class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg">Resolution</button>
+            <button class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg">Settlement</button>
             <button class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg">Resolved</button>
             <button class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg">Closed</button>
         </div>
@@ -51,93 +50,62 @@ session_start();
             </thead>
             <tbody>
                 <?php
-                // In a real application, this would be populated from database
-                // For now, we'll use sample data
-                $sampleCases = [
-                    [
-                        'id' => 'KP-2025-001',
-                        'title' => 'Property Boundary Dispute',
-                        'date_filed' => '2025-05-03',
-                        'last_updated' => '2025-05-10',
-                        'status' => 'Open'
-                    ],
-                    [
-                        'id' => 'KP-2025-002',
-                        'title' => 'Unpaid Debt',
-                        'date_filed' => '2025-04-28',
-                        'last_updated' => '2025-05-05',
-                        'status' => 'Pending Hearing'
-                    ],
-                    [
-                        'id' => 'KP-2025-003',
-                        'title' => 'Noise Complaint',
-                        'date_filed' => '2025-05-01',
-                        'last_updated' => '2025-05-12',
-                        'status' => 'Mediation'
-                    ],
-                    [
-                        'id' => 'KP-2025-004',
-                        'title' => 'Trespassing Case',
-                        'date_filed' => '2025-04-15',
-                        'last_updated' => '2025-05-08',
-                        'status' => 'Resolved'
-                    ],
-                    [
-                        'id' => 'KP-2025-005',
-                        'title' => 'Physical Injury Case',
-                        'date_filed' => '2025-04-10',
-                        'last_updated' => '2025-04-30',
-                        'status' => 'Closed'
-                    ]
-                ];
-                
-                foreach ($sampleCases as $case) {
-                    echo '<tr class="border-b hover:bg-gray-100">';
-                    echo '<td class="p-2">' . $case['id'] . '</td>';
-                    echo '<td class="p-2">' . $case['title'] . '</td>';
-                    echo '<td class="p-2">' . $case['date_filed'] . '</td>';
-                    echo '<td class="p-2">' . $case['last_updated'] . '</td>';
-                    
-                    // Set status color based on status value
-                    $statusClass = '';
-                    $statusIcon = '';
-                    
-                    switch ($case['status']) {
-                        case 'Open':
-                            $statusClass = 'text-blue-600';
-                            $statusIcon = '<i class="fas fa-folder-open"></i> ';
-                            break;
-                        case 'Pending Hearing':
-                            $statusClass = 'text-orange-600';
-                            $statusIcon = '<i class="fas fa-calendar-day"></i> ';
-                            break;
-                        case 'Mediation':
-                            $statusClass = 'text-purple-600';
-                            $statusIcon = '<i class="fas fa-handshake"></i> ';
-                            break;
-                        case 'Resolved':
-                            $statusClass = 'text-green-600';
-                            $statusIcon = '<i class="fas fa-check-circle"></i> ';
-                            break;
-                        case 'Closed':
-                            $statusClass = 'text-gray-600';
-                            $statusIcon = '<i class="fas fa-folder"></i> ';
-                            break;
-                        default:
-                            $statusClass = 'text-gray-600';
-                    }
-                    
-                    echo '<td class="p-2 ' . $statusClass . '">' . $statusIcon . $case['status'] . '</td>';
-                    echo '<td class="p-2 text-center">
-                            <a href="view_case_details.php?id=' . $case['id'] . '" class="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600">
-                                <i class="fas fa-eye"></i> View
-                            </a>
-                            <a href="update_case_status.php?id=' . $case['id'] . '" class="bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600 ml-1">
-                                <i class="fas fa-edit"></i> Update
-                            </a>
-                          </td>';
-                    echo '</tr>';
-                }
+               $sql = "SELECT ci.*, comp.Complaint_Title 
+        FROM case_info ci 
+        LEFT JOIN complaint_info comp ON ci.Complaint_ID = comp.Complaint_ID 
+        ORDER BY ci.Date_Opened DESC";
+                $result = $conn->query($sql);
+                if ($result->num_rows > 0) {
+    while ($case = $result->fetch_assoc()) {
+    echo '<tr class="border-b hover:bg-gray-100">';
+    echo '<td class="p-2">' . $case['Case_ID'] . '</td>';
+    echo '<td class="p-2">' . ($case['Complaint_Title'] ?? 'N/A') . '</td>';
+    echo '<td class="p-2">' . $case['Date_Opened'] . '</td>';
+    echo '<td class="p-2">' . ($case['Date_Closed'] ?? 'Not yet closed') . '</td>';
+
+    $status = $case['Case_Status']; // This is your correct field
+    $statusClass = 'text-gray-600';
+    $statusIcon = '';
+
+    switch ($status) {
+        case 'Open':
+            $statusClass = 'text-blue-600';
+            $statusIcon = '<i class="fas fa-folder-open"></i> ';
+            break;
+        case 'Pending Hearing':
+            $statusClass = 'text-orange-600';
+            $statusIcon = '<i class="fas fa-calendar-day"></i> ';
+            break;
+        case 'Mediation':
+            $statusClass = 'text-purple-600';
+            $statusIcon = '<i class="fas fa-handshake"></i> ';
+            break;
+        case 'Resolved':
+            $statusClass = 'text-green-600';
+            $statusIcon = '<i class="fas fa-check-circle"></i> ';
+            break;
+        case 'Closed':
+            $statusClass = 'text-gray-600';
+            $statusIcon = '<i class="fas fa-folder"></i> ';
+            break;
+    }
+
+    echo '<td class="p-2 ' . $statusClass . '">' . $statusIcon . $status . '</td>';
+    echo '<td class="p-2 text-center">
+            <a href="view_case_details.php?id=' . $case['Case_ID'] . '" class="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600">
+                <i class="fas fa-eye"></i> View
+            </a>
+            <a href="update_case_status.php?id=' . $case['Case_ID'] . '" class="bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600 ml-1">
+                <i class="fas fa-edit"></i> Update
+            </a>
+          </td>';
+    echo '</tr>';
+}
+
+} else {
+    echo '<tr><td colspan="6" class="p-4 text-center text-gray-500">No cases found.</td></tr>';
+}
+
                 ?>
             </tbody>
         </table>
@@ -167,7 +135,50 @@ session_start();
         
         // Filter buttons could be implemented with JavaScript here
     </script>
-    
-    <?php include '../includes/case_assistant.php'; ?>
+    <script>
+    const searchInput = document.getElementById('searchCase');
+    const filterButtons = document.querySelectorAll('.mb-4.flex.space-x-2 button');
+    const tableRows = document.querySelectorAll('tbody tr');
+
+    let activeStatus = 'All Cases';
+
+    // Apply filters (status + search)
+    function applyFilters() {
+        const searchValue = searchInput.value.toLowerCase();
+
+        tableRows.forEach(row => {
+            const rowText = row.textContent.toLowerCase();
+            const statusCell = row.querySelector('td:nth-child(5)');
+            const status = statusCell ? statusCell.textContent.trim().toLowerCase() : '';
+
+            const matchesSearch = rowText.includes(searchValue);
+            const matchesStatus = activeStatus === 'All Cases' || status.includes(activeStatus.toLowerCase());
+
+            row.style.display = (matchesSearch && matchesStatus) ? '' : 'none';
+        });
+    }
+
+    // Search input event
+    searchInput.addEventListener('keyup', applyFilters);
+
+    // Status filter button events
+    filterButtons.forEach(btn => {
+        btn.addEventListener('click', function () {
+            // Reset all button styles
+            filterButtons.forEach(b => b.classList.remove('bg-blue-600', 'text-white'));
+            filterButtons.forEach(b => b.classList.add('bg-gray-200', 'text-gray-800'));
+
+            // Highlight clicked button
+            this.classList.remove('bg-gray-200', 'text-gray-800');
+            this.classList.add('bg-blue-600', 'text-white');
+
+            activeStatus = this.textContent.trim();
+            applyFilters();
+        });
+    });
+</script>
+
+   <?php include '../chatbot/bpamis_case_assistant.php'?>
+    <?php include 'sidebar_.php';?>
 </body>
 </html>

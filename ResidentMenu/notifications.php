@@ -1,6 +1,38 @@
 <?php
 session_start();
+include '../server/server.php';
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: ../bpamis_website/login.php");
+    exit();
+}
+
+$resident_id = $_SESSION['user_id'];
+
+// Fetch notifications for this resident
+$sql = "SELECT * FROM notifications WHERE resident_id = ? ORDER BY created_at DESC";
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("i", $resident_id);
+$stmt->execute();
+$result = $stmt->get_result();
+
+$notifications = [];
+while ($row = $result->fetch_assoc()) {
+    $notifications[] = $row;
+}
+
+// Prepare counts for hero metrics
+$allCount = count($notifications);
+$unreadCount = 0; $hearingCount = 0; $complaintCount = 0; $caseCount = 0;
+foreach ($notifications as $n) {
+    if(($n['is_read'] ?? 1) == 0) $unreadCount++;
+    $t = strtolower($n['type'] ?? '');
+    if($t === 'hearing') $hearingCount++; elseif($t === 'complaint') $complaintCount++; elseif($t === 'case') $caseCount++; 
+}
+
 ?>
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -78,7 +110,7 @@ session_start();
             right: 22px;
         }
         
-        /* Notification item styles */
+       
         .notification-item {
             transition: all 0.2s ease;
         }
@@ -336,364 +368,187 @@ session_start();
         }
     </style>
 </head>
-<body class="bg-gray-50 font-sans">
+<body class="bg-gray-50 font-sans relative overflow-x-hidden">
     <?php include_once('../includes/resident_nav.php'); ?>
-
-    <!-- Page Header -->
-    <div class="w-full mt-10 px-4">
-        <div class="gradient-bg rounded-2xl shadow-sm p-8 md:p-10 relative overflow-hidden">
-            <div class="absolute top-0 right-0 w-64 h-64 bg-primary-100 rounded-full -mr-20 -mt-20 opacity-70"></div>
-            <div class="absolute bottom-0 left-0 w-40 h-40 bg-primary-200 rounded-full -ml-10 -mb-10 opacity-60"></div>
-            <div class="relative z-10 flex justify-between items-center">
-                <div>
-                    <h2 class="text-3xl font-light text-primary-800">Your <span class="font-medium">Notifications</span></h2>
-                    <p class="mt-3 text-gray-600 max-w-md">Stay updated with the latest activity in your cases and complaints.</p>
-                </div>
-                <div class="hidden md:flex items-center">
-                    <div class="w-14 h-14 bg-blue-50 rounded-full flex items-center justify-center animate-bell-ring">
-                        <i class="fas fa-bell text-primary-500 text-2xl"></i>
+    <!-- Global Blue Blush Orbs Background -->
+    <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div class="absolute -top-40 -left-40 w-[480px] h-[480px] rounded-full bg-blue-200/40 blur-3xl animate-[float_14s_ease-in-out_infinite]"></div>
+        <div class="absolute top-1/3 -right-52 w-[560px] h-[560px] rounded-full bg-cyan-200/40 blur-[160px] animate-[float_18s_ease-in-out_infinite]"></div>
+        <div class="absolute -bottom-52 left-1/3 w-[520px] h-[520px] rounded-full bg-indigo-200/30 blur-3xl animate-[float_16s_ease-in-out_infinite]"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[900px] rounded-full bg-gradient-to-br from-blue-50 via-white to-cyan-50 opacity-70 blur-[200px]"></div>
+    </div>
+    <!-- Premium Hero -->
+    <div class="w-full mt-8 px-4">
+        <div class="relative gradient-bg rounded-2xl shadow-sm p-8 md:p-10 overflow-hidden max-w-7xl mx-auto">
+            <div class="absolute top-0 right-0 w-64 h-64 bg-primary-100 rounded-full -mr-24 -mt-24 opacity-70 animate-[float_8s_ease-in-out_infinite]"></div>
+            <div class="absolute bottom-0 left-0 w-40 h-40 bg-primary-200 rounded-full -ml-14 -mb-14 opacity-60 animate-[float_6s_ease-in-out_infinite]"></div>
+            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-br from-primary-50 via-white to-primary-100 opacity-30 blur-3xl rounded-full pointer-events-none"></div>
+            <div class="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-8">
+                <div class="max-w-2xl">
+                    <h1 class="text-3xl md:text-4xl font-light text-primary-900 tracking-tight">Your <span class="font-semibold">Notifications</span></h1>
+                    <p class="mt-4 text-gray-600 leading-relaxed">Track case updates, complaint actions, and upcoming hearings in one consolidated stream. Use smart filters to narrow what you see.</p>
+                    <div class="mt-5 flex flex-wrap gap-3 text-xs text-primary-700/80 font-medium">
+                        <span class="px-3 py-1.5 rounded-full bg-white/70 backdrop-blur border border-primary-100 shadow-sm flex items-center gap-1"><i class="fa-solid fa-bell text-primary-500"></i> Real-time</span>
+                        <span class="px-3 py-1.5 rounded-full bg-white/70 backdrop-blur border border-primary-100 shadow-sm flex items-center gap-1"><i class="fa-solid fa-filter text-primary-500"></i> Filterable</span>
+                        <span class="px-3 py-1.5 rounded-full bg-white/70 backdrop-blur border border-primary-100 shadow-sm flex items-center gap-1"><i class="fa-solid fa-magnifying-glass text-primary-500"></i> Searchable</span>
                     </div>
+                </div>
+                <div class="flex flex-col gap-3 min-w-[250px]">
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-blue-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-blue-600 font-semibold">All</span><span class="mt-1 text-lg font-semibold text-blue-700"><?= $allCount ?></span></div>
+                        <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-amber-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-amber-600 font-semibold">Unread</span><span class="mt-1 text-lg font-semibold text-amber-700"><?= $unreadCount ?></span></div>
+                    </div>
+                    <div class="text-[11px] text-primary-700/70 text-center">Overview summary</div>
                 </div>
             </div>
         </div>
     </div>
-    
-    <!-- Filters & Search -->
-    <div class="w-full mt-6 px-4">
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-            <div class="flex flex-wrap justify-between items-center">
-                <div class="flex flex-wrap items-center gap-2 mb-2 md:mb-0">
-                    <button class="px-3 py-1 bg-primary-50 text-primary-700 rounded-lg text-sm font-medium border border-primary-100">All</button>
-                    <button class="px-3 py-1 text-gray-500 rounded-lg text-sm hover:bg-gray-50">Unread</button>
-                    <button class="px-3 py-1 text-gray-500 rounded-lg text-sm hover:bg-gray-50">Cases</button>
-                    <button class="px-3 py-1 text-gray-500 rounded-lg text-sm hover:bg-gray-50">Complaints</button>
-                    <button class="px-3 py-1 text-gray-500 rounded-lg text-sm hover:bg-gray-50">Hearings</button>
-                </div>
-                
-                <div class="flex items-center gap-4">
-                    <div class="relative">
-                        <input 
-                            type="text" 
-                            placeholder="Search notifications..." 
-                            class="pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-300 w-full"
-                        >
-                        <div class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
-                            <i class="fas fa-search"></i>
+    <!-- Advanced Filters Card -->
+    <div class="w-full mt-8 px-4">
+        <div class="max-w-7xl mx-auto">
+            <div class="relative bg-white/90 backdrop-blur-sm border border-gray-100 rounded-2xl shadow-sm p-6 md:p-7 overflow-hidden">
+                <div class="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br from-primary-50 to-primary-100 rounded-full opacity-70"></div>
+                <div class="absolute -bottom-12 -left-12 w-40 h-40 bg-gradient-to-tr from-primary-50 to-primary-100 rounded-full opacity-60"></div>
+                <div class="relative z-10 space-y-6">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div class="flex items-center gap-3 text-primary-700/80 text-sm font-medium">
+                            <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary-50/70 border border-primary-100"><i class="fa-solid fa-sliders text-primary-500"></i> Refine Notifications</span>
                         </div>
+                        <form method="POST" action="mark_all_read.php" class="flex items-center gap-2">
+                            <button type="submit" class="group relative inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-primary-500 to-primary-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all">
+                                <i class="fa-solid fa-check-double"></i>
+                                <span>Mark All Read</span>
+                            </button>
+                        </form>
                     </div>
-                    <button class="text-primary-600 hover:text-primary-700 text-sm font-medium whitespace-nowrap">
-                        <i class="fas fa-check-double mr-1"></i> Mark all as read
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Notifications List -->
-    <div class="w-full mt-6 px-4 pb-10">
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-            <div class="divide-y divide-gray-100">
-                <!-- Today Section -->
-                <div class="p-4 bg-gray-50">
-                    <h3 class="text-sm font-medium text-gray-500">Today</h3>
-                </div>
-                
-                <!-- New notification with unread indicator -->
-                <div class="notification-card p-5 relative cursor-pointer" data-id="notif-1">
-                    <div class="unread-indicator animate-pulse-subtle"></div>
-                    <div class="flex">
-                        <div class="flex-shrink-0 mr-4">
-                            <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                                <i class="fas fa-calendar-alt text-primary-600"></i>
-                            </div>
-                        </div>
-                        <div class="flex-grow">
-                            <p class="text-sm font-medium">Hearing Scheduled</p>
-                            <p class="text-sm text-gray-600 mt-1">Your case CASE-001 (Property Dispute) has been scheduled for a hearing on May 20, 2025 at 10:00 AM.</p>
-                            <div class="flex justify-between items-center mt-2">
-                                <p class="text-xs text-gray-500">Today at 9:15 AM</p>
-                                <div class="flex gap-2">
-                                    <button class="text-primary-600 hover:text-primary-700 text-sm">View Case</button>
-                                </div>
-                            </div>
-                        </div>
+                    <!-- Status / Type Chips -->
+                    <div class="flex flex-wrap gap-2" id="notifChips">
+                        <button type="button" data-filter="" class="n-chip active px-3 py-1.5 text-xs font-medium rounded-full bg-primary-600 text-white shadow-sm">All</button>
+                        <button type="button" data-filter="unread" class="n-chip px-3 py-1.5 text-xs font-medium rounded-full bg-amber-50 text-amber-600 border border-amber-100 hover:bg-amber-100 transition">Unread</button>
+                        <button type="button" data-filter="hearing" class="n-chip px-3 py-1.5 text-xs font-medium rounded-full bg-purple-50 text-purple-600 border border-purple-100 hover:bg-purple-100 transition">Hearings</button>
+                        <button type="button" data-filter="complaint" class="n-chip px-3 py-1.5 text-xs font-medium rounded-full bg-green-50 text-green-600 border border-green-100 hover:bg-green-100 transition">Complaints</button>
+                        <button type="button" data-filter="case" class="n-chip px-3 py-1.5 text-xs font-medium rounded-full bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 transition">Cases</button>
                     </div>
-                </div>
-                
-                <!-- New notification with unread indicator -->
-                <div class="notification-card p-5 relative cursor-pointer" data-id="notif-2">
-                    <div class="unread-indicator animate-pulse-subtle"></div>
-                    <div class="flex">
-                        <div class="flex-shrink-0 mr-4">
-                            <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                                <i class="fas fa-file-alt text-green-600"></i>
-                            </div>
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                        <div class="md:col-span-5 relative group">
+                            <input id="searchInput" type="text" placeholder="Search notifications..." class="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200/80 bg-white/70 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 placeholder:text-gray-400 text-sm transition" />
+                            <i class="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-primary-400 group-focus-within:text-primary-500 transition"></i>
                         </div>
-                        <div class="flex-grow">
-                            <p class="text-sm font-medium">Complaint Status Updated</p>
-                            <p class="text-sm text-gray-600 mt-1">Your complaint COMP-002 (Property damage claim) has been reviewed by the barangay officials and was forwarded to the barangay captain.</p>
-                            <div class="flex justify-between items-center mt-2">
-                                <p class="text-xs text-gray-500">Today at 8:30 AM</p>
-                                <div class="flex gap-2">
-                                    <button class="text-primary-600 hover:text-primary-700 text-sm">View Complaint</button>
-                                </div>
-                            </div>
+                        <div class="md:col-span-2 relative">
+                            <select id="monthFilter" class="w-full pl-3 pr-8 py-3 rounded-xl border border-gray-200 bg-white/70 text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 appearance-none">
+                                <option value="">All Months</option>
+                                <?php foreach(range(1,12) as $m): $mn=date('F',mktime(0,0,0,$m,1)); ?>
+                                    <option value="<?= str_pad($m,2,'0',STR_PAD_LEFT) ?>"><?= $mn ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <i class="fa-solid fa-caret-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-primary-400"></i>
+                        </div>
+                        <div class="md:col-span-2 relative">
+                            <select id="yearFilter" class="w-full pl-3 pr-8 py-3 rounded-xl border border-gray-200 bg-white/70 text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 appearance-none">
+                                <option value="">All Years</option>
+                                <?php $cy=date('Y'); for($y=$cy;$y>=$cy-5;$y--): ?>
+                                    <option value="<?= $y ?>"><?= $y ?></option>
+                                <?php endfor; ?>
+                            </select>
+                            <i class="fa-solid fa-caret-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-primary-400"></i>
+                        </div>
+                        <div class="md:col-span-2 relative">
+                            <select id="sortOrder" class="w-full pl-3 pr-8 py-3 rounded-xl border border-gray-200 bg-white/70 text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 appearance-none">
+                                <option value="desc">Newest First</option>
+                                <option value="asc">Oldest First</option>
+                            </select>
+                            <i class="fa-solid fa-caret-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-primary-400"></i>
+                        </div>
+                        <div class="md:col-span-1 flex">
+                            <button id="resetFilters" class="w-full inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl border border-primary-100 bg-primary-50/60 text-primary-600 text-sm font-medium hover:bg-primary-100 transition"><i class="fa-solid fa-rotate-left"></i><span class="hidden xl:inline">Reset</span></button>
                         </div>
                     </div>
                 </div>
-                
-                <!-- Yesterday Section -->
-                <div class="p-4 bg-gray-50">
-                    <h3 class="text-sm font-medium text-gray-500">Yesterday</h3>
-                </div>
-                
-                <!-- Read notification -->
-                <div class="notification-card p-5 cursor-pointer" data-id="notif-3">
-                    <div class="flex">
-                        <div class="flex-shrink-0 mr-4">
-                            <div class="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
-                                <i class="fas fa-gavel text-yellow-600"></i>
-                            </div>
-                        </div>
-                        <div class="flex-grow">
-                            <p class="text-sm font-medium">Document Request</p>
-                            <p class="text-sm text-gray-600 mt-1">Please bring a copy of your property title to the upcoming mediation session for CASE-003 (Boundary Dispute).</p>
-                            <div class="flex justify-between items-center mt-2">
-                                <p class="text-xs text-gray-500">May 12, 2025 at 4:45 PM</p>
-                                <div class="flex gap-2">
-                                    <button class="text-primary-600 hover:text-primary-700 text-sm">View Case</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Earlier Section -->
-                <div class="p-4 bg-gray-50">
-                    <h3 class="text-sm font-medium text-gray-500">Earlier</h3>
-                </div>
-                
-                <!-- Read notification -->
-                <div class="notification-card p-5 cursor-pointer" data-id="notif-4">
-                    <div class="flex">
-                        <div class="flex-shrink-0 mr-4">
-                            <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-                                <i class="fas fa-check-circle text-purple-600"></i>
-                            </div>
-                        </div>
-                        <div class="flex-grow">
-                            <p class="text-sm font-medium">Case Resolution</p>
-                            <p class="text-sm text-gray-600 mt-1">Case CASE-002 (Noise Complaint) has been successfully resolved. Both parties have reached an agreement.</p>
-                            <div class="flex justify-between items-center mt-2">
-                                <p class="text-xs text-gray-500">Apr 30, 2025 at 2:20 PM</p>
-                                <div class="flex gap-2">
-                                    <button class="text-primary-600 hover:text-primary-700 text-sm">View Case</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Read notification -->
-                <div class="notification-card p-5 cursor-pointer" data-id="notif-5">
-                    <div class="flex">
-                        <div class="flex-shrink-0 mr-4">
-                            <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                                <i class="fas fa-exclamation-circle text-red-600"></i>
-                            </div>
-                        </div>
-                        <div class="flex-grow">
-                            <p class="text-sm font-medium">Reminder: Upcoming Hearing</p>
-                            <p class="text-sm text-gray-600 mt-1">This is a reminder for your upcoming hearing for CASE-002 (Noise Complaint) scheduled for Apr 25, 2025 at 1:30 PM.</p>
-                            <div class="flex justify-between items-center mt-2">
-                                <p class="text-xs text-gray-500">Apr 23, 2025 at 10:00 AM</p>
-                                <div class="flex gap-2">
-                                    <button class="text-primary-600 hover:text-primary-700 text-sm">View Case</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Pagination -->
-        <div class="mt-6 flex justify-center">
-            <nav class="flex items-center space-x-1">
-                <button class="p-2 rounded-md text-gray-400 hover:text-primary-600 hover:bg-primary-50 disabled:opacity-50" disabled>
-                    <i class="fas fa-chevron-left"></i>
-                </button>
-                <button class="px-3 py-1 rounded-md bg-primary-50 text-primary-600 font-medium">1</button>
-                <button class="px-3 py-1 rounded-md text-gray-500 hover:bg-gray-100">2</button>
-                <button class="p-2 rounded-md text-gray-400 hover:text-primary-600 hover:bg-primary-50">
-                    <i class="fas fa-chevron-right"></i>
-                </button>
-            </nav>
-        </div>
-        
-        <div class="mt-6 flex justify-center">
-            <button onclick="window.location.href='home-resident.php'" class="px-4 py-2 text-gray-500 hover:text-gray-700 flex items-center transition-colors">
-                <i class="fas fa-arrow-left mr-2"></i> Back to Dashboard
-            </button>
-        </div>
-    </div>
-    
-    <!-- No notifications state (hidden by default) -->
-    <div id="no-notifications" class="hidden w-full mt-10 px-4 pb-10">
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-10 text-center">
-            <div class="flex justify-center mb-4">
-                <div class="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center">
-                    <i class="fas fa-bell-slash text-gray-300 text-3xl"></i>
-                </div>
-            </div>
-            <h3 class="text-lg font-medium text-gray-700 mb-2">No notifications yet</h3>
-            <p class="text-gray-500 max-w-md mx-auto">When you receive new notifications about your cases or complaints, they will appear here.</p>
-            <div class="mt-6">
-                <button onclick="window.location.href='home-resident.php'" class="px-4 py-2 bg-primary-50 text-primary-600 rounded-lg text-sm font-medium hover:bg-primary-100 transition-colors">
-                    Return to Dashboard
-                </button>
             </div>
         </div>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Filter buttons functionality
-            const filterButtons = document.querySelectorAll('.px-3.py-1.rounded-lg.text-sm');
-            
-            filterButtons.forEach(button => {
-                button.addEventListener('click', function() {
-                    // Reset all buttons
-                    filterButtons.forEach(btn => {
-                        btn.classList.remove('bg-primary-50', 'text-primary-700', 'border', 'border-primary-100');
-                        btn.classList.add('text-gray-500');
-                    });
-                    
-                    // Set active button
-                    this.classList.remove('text-gray-500');
-                    this.classList.add('bg-primary-50', 'text-primary-700', 'border', 'border-primary-100');
-                    
-                    // Toggle empty state for demo purposes when "Hearings" is clicked
-                    if (this.textContent.trim() === "Hearings") {
-                        document.querySelector('.divide-y.divide-gray-100').parentElement.classList.add('hidden');
-                        document.querySelector('.mt-6.flex.justify-center').classList.add('hidden');
-                        document.getElementById('no-notifications').classList.remove('hidden');
-                    } else {
-                        document.querySelector('.divide-y.divide-gray-100').parentElement.classList.remove('hidden');
-                        document.querySelector('.mt-6.flex.justify-center').classList.remove('hidden');
-                        document.getElementById('no-notifications').classList.add('hidden');
-                    }
-                });
-            });
-            
-            // Search functionality
-            const searchInput = document.querySelector('input[type="text"]');
-            const notificationCards = document.querySelectorAll('.notification-card');
-            
-            searchInput.addEventListener('input', function() {
-                const query = this.value.toLowerCase();
-                
-                // Filter notifications
-                let hasResults = false;
-                notificationCards.forEach(card => {
-                    const content = card.textContent.toLowerCase();
-                    
-                    if (content.includes(query)) {
-                        card.style.display = '';
-                        hasResults = true;
-                    } else {
-                        card.style.display = 'none';
-                    }
-                });
-                
-                // Check if sections are empty
-                document.querySelectorAll('.bg-gray-50').forEach(section => {
-                    let nextElement = section.nextElementSibling;
-                    let hasVisibleCards = false;
-                    
-                    while (nextElement && !nextElement.classList.contains('bg-gray-50')) {
-                        if (nextElement.classList.contains('notification-card') && nextElement.style.display !== 'none') {
-                            hasVisibleCards = true;
-                            break;
-                        }
-                        nextElement = nextElement.nextElementSibling;
-                    }
-                    
-                    // Hide section header if no visible cards
-                    section.style.display = hasVisibleCards ? '' : 'none';
-                });
-                
-                // If no results, show empty state
-                if (!hasResults) {
-                    document.querySelector('.divide-y.divide-gray-100').parentElement.classList.add('hidden');
-                    document.querySelector('.mt-6.flex.justify-center').classList.add('hidden');
-                    document.getElementById('no-notifications').classList.remove('hidden');
-                    document.getElementById('no-notifications').querySelector('h3').textContent = 'No matching notifications';
-                    document.getElementById('no-notifications').querySelector('p').textContent = 'Try adjusting your search or filter to find what you\'re looking for.';
-                } else {
-                    document.querySelector('.divide-y.divide-gray-100').parentElement.classList.remove('hidden');
-                    document.querySelector('.mt-6.flex.justify-center').classList.remove('hidden');
-                    document.getElementById('no-notifications').classList.add('hidden');
+<!-- Notifications Grid -->
+<div id="notificationSection" class="w-full mt-8 px-4 pb-20">
+    <div class="max-w-7xl mx-auto">
+    <div id="notificationGrid" class="grid grid-cols-1 gap-4">
+            <?php if(!empty($notifications)): foreach($notifications as $notif): 
+                $icon='fa-bell'; $iconWrap='bg-gray-100 text-gray-600';
+                $type=strtolower($notif['type']);
+                switch($type){
+                    case 'hearing': $icon='fa-calendar-alt'; $iconWrap='bg-purple-50 text-purple-600'; break;
+                    case 'complaint': $icon='fa-file-alt'; $iconWrap='bg-green-50 text-green-600'; break;
+                    case 'case': $icon='fa-gavel'; $iconWrap='bg-blue-50 text-blue-600'; break;
                 }
-            });
-            
-            // Notification click functionality
-            notificationCards.forEach(card => {
-                card.addEventListener('click', function() {
-                    const notifId = this.getAttribute('data-id');
-                    
-                    // Remove unread indicator if present
-                    const unreadIndicator = this.querySelector('.unread-indicator');
-                    if (unreadIndicator) {
-                        unreadIndicator.classList.add('opacity-0');
-                        setTimeout(() => {
-                            unreadIndicator.remove();
-                        }, 300);
-                    }
-                    
-                    // Determine destination based on notification type
-                    let destination = 'home-resident.php';
-                    
-                    if (notifId === 'notif-1' || notifId === 'notif-3' || notifId === 'notif-4' || notifId === 'notif-5') {
-                        destination = 'view_cases.php';
-                    } else if (notifId === 'notif-2') {
-                        destination = 'view_complaints.php';
-                    }
-                    
-                    // Navigate after a small delay to show the read effect
-                    setTimeout(() => {
-                        window.location.href = destination;
-                    }, 300);
-                });
-            });
-            
-            // Mark all as read functionality
-            const markAllButton = document.querySelector('button:has(.fa-check-double)');
-            markAllButton.addEventListener('click', function() {
-                document.querySelectorAll('.unread-indicator').forEach(indicator => {
-                    indicator.classList.add('opacity-0');
-                    setTimeout(() => {
-                        indicator.remove();
-                    }, 300);
-                });
-            });
-            
-            // Mobile menu toggle
-            const menuButton = document.getElementById('mobile-menu-button');
-            const mobileMenu = document.getElementById('mobile-menu');
-            
-            if (menuButton && mobileMenu) {
-                menuButton.addEventListener('click', function() {
-                    this.classList.toggle('active');
-                    if (mobileMenu.style.transform === 'translateY(0%)') {
-                        mobileMenu.style.transform = 'translateY(-100%)';
-                    } else {
-                        mobileMenu.style.transform = 'translateY(0%)';
-                    }
-                });
+                $isUnread = ($notif['is_read'] ?? 1)==0; $createdRaw=$notif['created_at']; $createdDisp=date('M j, Y g:i A', strtotime($createdRaw));
+            ?>
+            <div class="notif-card relative group bg-white/85 backdrop-blur rounded-xl border border-gray-100 p-4 flex flex-col gap-3 hover:-translate-y-[2px] hover:shadow-md transition-all" data-type="<?= $type ?>" data-date="<?= date('Y-m-d H:i:s', strtotime($createdRaw)) ?>" data-unread="<?= $isUnread? '1':'0' ?>" data-search="<?= htmlspecialchars(strtolower($notif['title'].' '.$notif['message'])) ?>">
+                <?php if($isUnread): ?><span class="absolute top-3 right-3 inline-flex w-2.5 h-2.5 rounded-full bg-amber-500 shadow animate-pulse-subtle"></span><?php endif; ?>
+                <div class="flex items-start gap-3">
+                    <div class="shrink-0 w-11 h-11 rounded-full flex items-center justify-center <?= $iconWrap ?> shadow-sm"><i class="fa-solid <?= $icon ?> text-base"></i></div>
+                    <div class="flex-1 min-w-0">
+                        <h3 class="text-sm font-medium text-gray-800 leading-snug line-clamp-2" title="<?= htmlspecialchars($notif['title']) ?>"><?= htmlspecialchars($notif['title']) ?></h3>
+                        <p class="mt-1 text-xs text-gray-600 line-clamp-3" title="<?= htmlspecialchars($notif['message']) ?>"><?= htmlspecialchars($notif['message']) ?></p>
+                    </div>
+                </div>
+                <div class="mt-auto flex items-center justify-between pt-1">
+                    <span class="text-[11px] text-gray-500 font-medium flex items-center gap-1"><i class="fa-regular fa-clock"></i> <?= $createdDisp ?></span>
+                    <div class="flex gap-2">
+                        <a href="view_notification.php?id=<?= $notif['notification_id'] ?>" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-primary-50 text-primary-600 text-[11px] font-medium hover:bg-primary-100 transition"><i class="fa-solid fa-eye"></i> View</a>
+                        <?php if($isUnread): ?>
+                        <form method="POST" action="mark_read.php" class="inline">
+                            <input type="hidden" name="notif_id" value="<?= $notif['notification_id'] ?>" />
+                            <button type="submit" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-[11px] font-medium hover:bg-amber-100 transition"><i class="fa-solid fa-circle-check"></i> Read</button>
+                        </form>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+            <?php endforeach; else: ?>
+                <div class="col-span-full py-12 text-center text-gray-500 text-sm">No notifications yet.</div>
+            <?php endif; ?>
+        </div>
+        <div id="noResults" class="hidden col-span-full mt-8 text-center text-gray-500 text-sm">No notifications match your filters.</div>
+        <div class="mt-8 flex justify-center">
+            <a href="home-resident.php" class="inline-flex items-center gap-2 px-4 py-2 text-gray-500 hover:text-gray-700 text-sm font-medium transition"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+    const chips=document.querySelectorAll('#notifChips .n-chip');
+    const searchInput=document.getElementById('searchInput');
+    const monthFilter=document.getElementById('monthFilter');
+    const yearFilter=document.getElementById('yearFilter');
+    const sortOrder=document.getElementById('sortOrder');
+    const resetBtn=document.getElementById('resetFilters');
+    const cards=[...document.querySelectorAll('.notif-card')];
+    const noResults=document.getElementById('noResults');
+    let filterOverride='';
+    function applyFilters(){
+        const q=(searchInput.value||'').toLowerCase(); const m=monthFilter.value; const y=yearFilter.value; const order=sortOrder.value; let shown=0;
+        cards.forEach(c=>{
+            const type=c.dataset.type||''; const unread=c.dataset.unread==='1'; const dateRaw=c.dataset.date||''; const text=c.dataset.search||''; let show=true;
+            if(filterOverride){
+                if(filterOverride==='unread') show=unread; else show=type===filterOverride;
             }
-        });
-    </script>
+            if(q) show=show && text.includes(q);
+            if((m||y)&&dateRaw){ const d=new Date(dateRaw); const M=('0'+(d.getMonth()+1)).slice(-2); const Y=d.getFullYear().toString(); if(m) show=show && M===m; if(y) show=show && Y===y; }
+            c.style.display=show?'':'none'; if(show) shown++; });
+        // sort
+        const grid=document.getElementById('notificationGrid');
+        const visible=cards.filter(c=>c.style.display!=='none').sort((a,b)=>{ const da=new Date(a.dataset.date); const db=new Date(b.dataset.date); return sortOrder.value==='asc'? da-db : db-da; });
+        visible.forEach(el=>grid.appendChild(el));
+        noResults.classList.toggle('hidden', shown>0);
+    }
+    chips.forEach(ch=> ch.addEventListener('click',()=>{ chips.forEach(c=>c.classList.remove('active','bg-primary-600','text-white','shadow')); ch.classList.add('active','bg-primary-600','text-white','shadow'); filterOverride=(ch.dataset.filter||''); applyFilters(); }));
+    [searchInput,monthFilter,yearFilter,sortOrder].forEach(el=> el.addEventListener('input',applyFilters));
+    monthFilter.addEventListener('change',applyFilters); yearFilter.addEventListener('change',applyFilters); sortOrder.addEventListener('change',applyFilters);
+    resetBtn.addEventListener('click',()=>{ searchInput.value=''; monthFilter.value=''; yearFilter.value=''; sortOrder.value='desc'; filterOverride=''; chips.forEach((c,i)=>{ c.classList.remove('active','bg-primary-600','text-white','shadow'); if(i===0){ c.classList.add('active','bg-primary-600','text-white','shadow'); } }); applyFilters(); });
+    applyFilters();
+});
+</script>
     
     <!-- Chatbot Button and Container -->
     <button class="chatbot-button" id="chatbotButton" aria-label="Open case assistant chatbot">

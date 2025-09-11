@@ -1,8 +1,93 @@
 <?php
+
 session_start();
+include '../server/server.php';
+
+// Redirect if not logged in
+if (!isset($_SESSION['user_id'])) {
+    header("Location: ../bpamis_website/login.php");
+    exit();
+}
+
+$resident_id = $_SESSION['user_id'];
+
+// Get the resident's name
+$query = "SELECT first_name, last_name FROM resident_info WHERE resident_id = ?";
+$stmt = $conn->prepare($query);
+$stmt->bind_param("i", $resident_id);
+$stmt->execute();
+$result = $stmt->get_result();
+
+$full_name = "Resident";
+if ($result && $result->num_rows === 1) {
+    $row = $result->fetch_assoc();
+    $full_name = $row['first_name'] . ' ' . $row['last_name'];
+}
+
+
+// Total Complaints by  Resident
+$complaintsCount = $conn->query("SELECT COUNT(*) AS total FROM complaint_info WHERE Resident_ID = $resident_id")->fetch_assoc()['total'] ?? 0;
+
+// Total Cases linked to Resident (via complaint_info)
+$casesCount = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM case_info ci 
+    JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID 
+    WHERE co.Resident_ID = $resident_id
+")->fetch_assoc()['total'] ?? 0;
+
+// Pending Complaints
+$pendingComplaints = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM complaint_info 
+    WHERE Resident_ID = $resident_id AND Status = 'Pending'
+")->fetch_assoc()['total'] ?? 0;
+
+// Resolved Cases
+$resolvedCases = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM case_info ci 
+    JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID 
+    WHERE co.Resident_ID = $resident_id AND Status = 'Resolved'
+")->fetch_assoc()['total'] ?? 0;
+
+// Pending Cases
+$pendingCases = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM case_info ci 
+    JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID 
+    WHERE co.Resident_ID = $resident_id AND Status = 'Pending'
+")->fetch_assoc()['total'] ?? 0;
+
+// Scheduled Hearings
+$scheduledHearings = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM schedule_list sl
+    JOIN case_info ci ON sl.Case_ID = ci.Case_ID
+    JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID
+    WHERE co.Resident_ID = $resident_id
+")->fetch_assoc()['total'] ?? 0;
+
+// Open Cases
+$openCases = $conn->query("
+    SELECT COUNT(*) AS total 
+    FROM case_info ci 
+    JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID 
+    WHERE co.Resident_ID = $resident_id AND Status = 'IN CASE'
+")->fetch_assoc()['total'] ?? 0;
+
+// Percentages (guard division)
+$complaintsPercent = $complaintsCount ? 100 : 0; // base bar for total
+$casesPercent = ($complaintsCount && $casesCount) ? min(100, round(($casesCount / $complaintsCount) * 100)) : 0;
+$pendingComplaintsPercent = $complaintsCount ? round(($pendingComplaints / $complaintsCount) * 100) : 0;
+$resolvedCasesPercent = $casesCount ? round(($resolvedCases / $casesCount) * 100) : 0;
+$hearingPercent = $casesCount ? min(100, round(($scheduledHearings / max($casesCount, 1)) * 100)) : 0;
 ?>
+
+
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,139 +95,221 @@ session_start();
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/js/all.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: {
-                            50: '#f0f7ff',
-                            100: '#e0effe',
-                            200: '#bae2fd',
-                            300: '#7cccfd',
-                            400: '#36b3f9',
-                            500: '#0c9ced',
-                            600: '#0281d4',
-                            700: '#026aad',
-                            800: '#065a8f',
-                            900: '#0a4b76'
-                        }
-                    },
-                    animation: {
-                        'float': 'float 3s ease-in-out infinite',
-                    },
-                    keyframes: {
-                        float: {
-                            '0%, 100%': { transform: 'translateY(0)' },
-                            '50%': { transform: 'translateY(-10px)' }
-                        }
-                    }
-                }
-            }
-        }
-    </script>
+    <script src="tailwind.js"></script>
+    <link rel="stylesheet" href="main.css">
     <style>
+        body {
+            background: radial-gradient(circle at 20% 20%, #e0f2ff 0%, #f5f9ff 50%, #ffffff 100%);
+        }
+
+        .orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(40px);
+            opacity: .55;
+            mix-blend-mode: multiply;
+        }
+
+        .orb.one {
+            width: 480px;
+            height: 480px;
+            background: linear-gradient(135deg, #0c9ced, #7cccfd);
+            top: -140px;
+            right: -120px;
+            animation: float 14s ease-in-out infinite;
+        }
+
+        .orb.two {
+            width: 360px;
+            height: 360px;
+            background: linear-gradient(135deg, #bae2fd, #e0effe);
+            bottom: -120px;
+            left: -100px;
+            animation: float 11s ease-in-out reverse infinite;
+        }
+
+        .glass {
+            backdrop-filter: blur(14px);
+            background: linear-gradient(135deg, rgba(255, 255, 255, .65), rgba(255, 255, 255, .35));
+            border: 1px solid rgba(255, 255, 255, .45);
+            box-shadow: 0 10px 40px -12px rgba(12, 156, 237, .25), 0 4px 18px -6px rgba(12, 156, 237, .18);
+        }
+
+        .section-label {
+            font-size: .65rem;
+            letter-spacing: .09em;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #0369a1;
+        }
+
+        .progress-wrap {
+            height: 12px;
+        }
+
+        .progress-bar {
+            transition: width 1s cubic-bezier(.4, .0, .2, 1);
+        }
+
+        .quick-btn {
+            position: relative;
+            overflow: hidden;
+            transition: .35s;
+        }
+
+        .quick-btn:before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(120deg, rgba(255, 255, 255, .6), rgba(255, 255, 255, 0));
+            opacity: 0;
+            transition: opacity .5s;
+        }
+
+        .quick-btn:hover:before {
+            opacity: 1;
+        }
+
+        .quick-btn:hover {
+            transform: translateY(-4px);
+        }
+
         .gradient-bg {
             background: linear-gradient(to right, #f0f7ff, #e0effe);
         }
+
         .card-hover {
             transition: all 0.3s ease;
         }
+
         .card-hover:hover {
             transform: translateY(-5px);
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
-        }        .progress-bar {
+        }
+
+        .progress-bar {
             transition: width 1s ease-in-out;
         }
-        
-        /* Modern Calendar Styles */
+
+
         .calendar-container {
-            --fc-border-color: #f0f0f0;
+            --fc-border-color: #edf2f7;
             --fc-daygrid-event-dot-width: 6px;
             --fc-event-border-radius: 6px;
             --fc-small-font-size: 0.75rem;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
-        
+
+        .fc-daygrid-event-dot {
+            /* the actual dot */
+            margin-left: 50px;
+        }
+
         .calendar-container .fc-theme-standard th {
             padding: 12px 0;
             font-weight: 500;
             text-transform: uppercase;
             font-size: 0.75rem;
             letter-spacing: 1px;
-            color: #6b7280;
+            color: #4b5563;
             border: none;
         }
-        
+
         .calendar-container .fc-theme-standard td {
-            border-color: #f5f5f5;
+            border-color: #f3f4f6;
         }
-        
+
         .calendar-container .fc-col-header-cell {
-            background: transparent;
+            background: #f9fafb;
         }
-        
+
         .calendar-container .fc-toolbar-title {
-            font-weight: 500;
+            font-weight: 600;
             font-size: 1.1rem;
+            color: #4338ca;
         }
-        
+
         .calendar-container .fc-button {
-            box-shadow: none !important;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
             padding: 0.5rem 0.75rem;
-            border-radius: 6px !important;
+            border-radius: 0.5rem !important;
             font-weight: 500;
-            transition: all 0.2s ease;
+            transition: all 0.3s ease;
             text-transform: capitalize;
             border: 1px solid #e5e7eb !important;
         }
-        
+
         .calendar-container .fc-button-primary {
             background-color: white !important;
             color: #4b5563 !important;
         }
-        
+
         .calendar-container .fc-button-primary:hover {
-            background-color: #f9fafb !important;
-            color: #111827 !important;
+            background-color: #eef2ff !important;
+            color: #4338ca !important;
+            transform: translateY(-1px);
         }
-        
-        .calendar-container .fc-button-primary:not(:disabled).fc-button-active, 
+
+        .calendar-container .fc-button-primary:not(:disabled).fc-button-active,
         .calendar-container .fc-button-primary:not(:disabled):active {
-            background-color: #f0f7ff !important;
-            color: #0281d4 !important;
+            background-color: #4f46e5 !important;
+            color: white !important;
+            border-color: #4338ca !important;
         }
-        
+
         .calendar-container .fc-daygrid-day-number {
             padding: 8px;
             font-size: 0.875rem;
             color: #374151;
+            font-weight: 500;
         }
-        
+
         .calendar-container .fc-daygrid-day.fc-day-today {
-            background-color: #f0f7ff !important;
+            background-color: rgba(79, 70, 229, 0.1) !important;
         }
-        
+
         .calendar-container .fc-event {
             border: none !important;
             padding: 2px 4px;
             font-size: 0.75rem !important;
             margin-top: 1px;
-            transition: transform 0.2s ease;
+            transition: all 0.3s ease;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
         }
-        
+
         .calendar-container .fc-event:hover {
-            transform: translateY(-1px);
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.12) !important;
+            z-index: 10;
         }
-        
+
         .calendar-container .fc-toolbar.fc-header-toolbar {
             margin-bottom: 1.25em;
             flex-wrap: wrap;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #e5e7eb;
         }
-          .calendar-container .fc-view-harness {
+
+        .calendar-container .fc-view-harness {
             border-radius: 8px;
             overflow: hidden;
         }
-        
+
+        .calendar-container .fc-event-title {
+            font-weight: 500 !important;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .calendar-container .fc-daygrid-day-frame {
+            transition: background-color 0.2s ease;
+        }
+
+        .calendar-container .fc-daygrid-day-frame:hover {
+            background-color: rgba(79, 70, 229, 0.05);
+        }
+
         @media (max-width: 640px) {
             .calendar-container .fc-toolbar.fc-header-toolbar {
                 display: flex;
@@ -150,643 +317,319 @@ session_start();
                 gap: 0.75rem;
                 align-items: center;
             }
-            
+
             .calendar-container .fc-toolbar-chunk {
                 display: flex;
                 justify-content: center;
+                transition: transform 0.3s ease;
+            }
+
+            .calendar-container .fc-toolbar-chunk:hover {
+                transform: translateY(-2px);
             }
         }
-        
-        /* Chatbot Button Styles */
-        .chatbot-button {
-            position: fixed;
-            bottom: 2rem;
-            right: 2rem;
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #0281d4, #0c9ced);
-            box-shadow: 0 4px 15px rgba(2, 129, 212, 0.25);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            transition: all 0.3s ease;
-            cursor: pointer;
-            border: none;
-            outline: none;
-        }
-        
-        .chatbot-button:hover {
-            transform: translateY(-5px) scale(1.05);
-            box-shadow: 0 6px 20px rgba(2, 129, 212, 0.35);
-        }
-        
-        .chatbot-button i {
-            font-size: 24px;
-            color: white;
-            transition: transform 0.3s ease;
-        }
-        
-        .chatbot-button:hover i {
-            transform: rotate(10deg);
-        }
-        
-        .pulse {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            background-color: rgba(2, 129, 212, 0.7);
-            opacity: 0;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0% {
-                transform: scale(0.95);
-                opacity: 0.7;
+
+        /* Calendar animation effects */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
             }
-            70% {
-                transform: scale(1.1);
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(-20px);
                 opacity: 0;
             }
-            100% {
-                transform: scale(0.95);
-                opacity: 0;
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
             }
         }
-        
-        .chatbot-container {
-            position: fixed;
-            bottom: 5.5rem;
-            right: 2rem;
-            width: 350px;
-            max-height: 500px;
-            border-radius: 16px;
-            background: white;
-            box-shadow: 0 5px 25px rgba(0, 0, 0, 0.15);
-            z-index: 999;
-            overflow: hidden;
-            opacity: 0;
-            transform: translateY(20px) scale(0.95);
-            pointer-events: none;
-            transition: all 0.3s ease;
+
+        /* Status colors */
+        .bg-green-100.text-green-800 {
+            background-color: rgba(16, 185, 129, 0.15) !important;
+            color: #065f46 !important;
         }
-        
-        .chatbot-container.active {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-            pointer-events: all;
+
+        .bg-red-100.text-red-800 {
+            background-color: rgba(239, 68, 68, 0.15) !important;
+            color: #991b1b !important;
         }
-        
-        .chatbot-header {
-            padding: 16px 20px;
-            background: linear-gradient(135deg, #0281d4, #0c9ced);
-            color: white;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+
+        .bg-yellow-100.text-yellow-800 {
+            background-color: rgba(245, 158, 11, 0.15) !important;
+            color: #92400e !important;
         }
-        
-        .chatbot-header h3 {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-weight: 600;
-            font-size: 1rem;
+
+        .bg-blue-100.text-blue-800 {
+            background-color: rgba(59, 130, 246, 0.15) !important;
+            color: #1e40af !important;
         }
-        
-        .chatbot-close {
-            background: transparent;
-            border: none;
-            color: white;
-            font-size: 18px;
-            cursor: pointer;
-            transition: transform 0.2s ease;
-        }
-        
-        .chatbot-close:hover {
-            transform: rotate(90deg);
-        }
-        
-        .chatbot-body {
-            height: 340px;
-            overflow-y: auto;
-            padding: 20px;
-        }
-        
-        .chatbot-footer {
-            padding: 12px 15px;
-            border-top: 1px solid #f0f0f0;
-            display: flex;
-            align-items: center;
-        }
-        
-        .chatbot-input {
-            flex: 1;
-            border: 1px solid #e5e7eb;
-            border-radius: 20px;
-            padding: 10px 15px;
-            font-size: 14px;
-            outline: none;
-            transition: border-color 0.2s ease;
-        }
-        
-        .chatbot-input:focus {
-            border-color: #0c9ced;
-            box-shadow: 0 0 0 2px rgba(12, 156, 237, 0.1);
-        }
-        
-        .send-button {
-            background: #0c9ced;
-            color: white;
-            border: none;
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            margin-left: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: background 0.2s ease;
-        }
-        
-        .send-button:hover {
-            background: #0281d4;
-        }
-        
-        .chat-message {
-            margin-bottom: 15px;
-            display: flex;
-            align-items: flex-start;
-        }
-        
-        .user-message {
-            justify-content: flex-end;
-        }
-        
-        .bot-message {
-            justify-content: flex-start;
-        }
-        
-        .message-content {
-            max-width: 80%;
-            padding: 12px 16px;
-            border-radius: 18px;
-            font-size: 14px;
-            line-height: 1.4;
+
+        .responsive-calendar-wrapper {
             position: relative;
+            width: 100%;
+            transition: height .35s ease;
         }
-        
-        .user-message .message-content {
-            background-color: #0c9ced;
-            color: white;
-            border-bottom-right-radius: 4px;
-            margin-right: 10px;
+
+        .responsive-calendar-wrapper iframe {
+            width: 100% !important;
+            border: none;
+            display: block;
+            background: transparent;
+            min-height: 700px;
         }
-        
-        .bot-message .message-content {
-            background-color: #f0f7ff;
-            color: #333;
-            border-bottom-left-radius: 4px;
-            margin-left: 10px;
-        }
-        
-        .bot-avatar {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: #e0effe;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .bot-avatar i {
-            color: #0281d4;
-            font-size: 16px;
-        }
-        
-        .message-time {
-            font-size: 10px;
-            color: #888;
-            margin-top: 4px;
-            text-align: right;
-        }
-        
-        /* Mobile responsiveness for chatbot */
-        @media (max-width: 640px) {
-            .chatbot-container {
-                width: calc(100% - 32px);
-                right: 16px;
-                left: 16px;
-                bottom: 5rem;
+
+        @media (max-width:1280px) {
+            .responsive-calendar-wrapper iframe {
+                min-height: 620px;
             }
-            
-            .chatbot-button {
-                bottom: 1.5rem;
-                right: 1.5rem;
+        }
+
+        @media (max-width:1024px) {
+            .responsive-calendar-wrapper iframe {
+                min-height: 560px;
+            }
+        }
+
+        @media (max-width:900px) {
+            .responsive-calendar-wrapper iframe {
+                min-height: 520px;
+            }
+        }
+
+        @media (max-width:768px) {
+            .responsive-calendar-wrapper iframe {
+                min-height: 480px;
+            }
+        }
+
+        @media (max-width:640px) {
+            .responsive-calendar-wrapper iframe {
+                min-height: 440px;
+            }
+        }
+
+        @media (max-width:640px) {
+            #calendar-legend.collapsed .legend-body {
+                display: none;
+            }
+
+            #calendar-legend .legend-toggle {
+                display: inline-flex;
+            }
+        }
+
+        @media (min-width:641px) {
+            #calendar-legend .legend-toggle {
+                display: none;
             }
         }
     </style>
+
+    </style>
 </head>
-<body class="bg-gray-50 font-sans">    
+
+<body class="font-sans text-gray-700 relative overflow-x-hidden">
+    <div class="orb one"></div>
+    <div class="orb two"></div>
     <?php include_once('../includes/resident_nav.php'); ?>
-      <!-- Welcome Banner -->
-    <section class="container mx-auto mt-10 px-4">
-        <div class="gradient-bg rounded-2xl shadow-sm p-8 md:p-12 relative overflow-hidden">
-            <div class="absolute top-0 right-0 w-64 h-64 bg-primary-100 rounded-full -mr-20 -mt-20 opacity-70"></div>
-            <div class="absolute bottom-0 left-0 w-40 h-40 bg-primary-200 rounded-full -ml-10 -mb-10 opacity-60"></div>
+    <!-- HERO -->
+    <div class="max-w-7xl mx-auto px-5 pt-10 relative">
+        <div class="glass rounded-3xl p-8 md:p-12 overflow-hidden fade-in">
+            <div class="absolute inset-0 pointer-events-none">
+                <div
+                    class="absolute -top-20 -right-10 w-80 h-80 bg-gradient-to-br from-primary-200/70 to-primary-400/40 rounded-full blur-3xl opacity-60">
+                </div>
+                <div
+                    class="absolute -bottom-24 -left-10 w-72 h-72 bg-gradient-to-tr from-primary-100/60 via-white/40 to-primary-300/40 rounded-full blur-3xl">
+                </div>
+            </div>
             <div class="relative z-10">
-                <h2 class="text-3xl font-light text-primary-800">Welcome, <span class="font-medium">Resident</span></h2>
-                <p class="mt-3 text-gray-600 max-w-md">Easily manage your complaints and track case statuses through this streamlined dashboard.</p>
+                <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+                    <div>
+                        <p class="section-label mb-2">Resident Dashboard</p>
+                        <h1 class="text-3xl md:text-4xl font-semibold tracking-tight text-sky-900">Welcome<span
+                                class="font-light">,</span></h1>
+                        <p class="mt-2 text-sky-800 text-lg font-medium"><?= htmlspecialchars($full_name) ?></p>
+                        <p class="mt-3 max-w-xl text-sm md:text-base text-sky-700/80">Monitor your complaints, hearings
+                            and settlement progress with real‑time updates tailored for residents.</p>
+                    </div>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4 w-full md:w-auto">
+                        <a href="submit_complaints.php"
+                            class="quick-btn glass group rounded-xl px-4 py-3 flex flex-col items-start gap-1 hover:shadow-lg transition">
+                            <div class="flex items-center gap-2 text-sky-700"><i
+                                    class="fa-solid fa-square-plus text-sky-600"></i><span
+                                    class="text-xs font-semibold tracking-wide uppercase">New</span></div>
+                            <span class="text-[13px] font-medium text-sky-900">Complaint</span>
+                        </a>
+                        <a href="view_complaints.php"
+                            class="quick-btn glass group rounded-xl px-4 py-3 flex flex-col items-start gap-1">
+                            <div class="flex items-center gap-2 text-emerald-700"><i
+                                    class="fa-solid fa-clipboard-list text-emerald-600"></i><span
+                                    class="text-xs font-semibold tracking-wide uppercase">View</span></div>
+                            <span class="text-[13px] font-medium text-emerald-900">Complaints</span>
+                        </a>
+                        <a href="view_cases.php"
+                            class="quick-btn glass group rounded-xl px-4 py-3 flex flex-col items-start gap-1">
+                            <div class="flex items-center gap-2 text-indigo-700"><i
+                                    class="fa-solid fa-gavel text-indigo-600"></i><span
+                                    class="text-xs font-semibold tracking-wide uppercase">View</span></div>
+                            <span class="text-[13px] font-medium text-indigo-900">Cases</span>
+                        </a>
+                    </div>
+                </div>
             </div>
         </div>
-    </section>
+    </div>
 
-    <!-- Quick Actions -->
-    <div class="container mx-auto mt-8 px-4">
-        <h3 class="text-lg font-medium text-gray-700 mb-4 px-2">Quick Actions</h3>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <a href="view_complaints.php" class="card-hover flex items-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
-                <div class="bg-blue-50 p-3 rounded-lg mr-4">
-                    <i class="fas fa-clipboard-list text-primary-600 text-lg"></i>
+    <!-- TWO COLUMN CONTENT -->
+    <div class="max-w-7xl mx-auto px-5 mt-10 pb-16">
+        <!-- Grid: stats (left) | hearings (right) -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+            <!-- Statistics Card (Left Column) -->
+            <div class="glass rounded-2xl p-6 md:p-7 fade-in h-full flex flex-col">
+                <div class="flex items-center gap-2 mb-5"><i class="fa-solid fa-chart-simple text-sky-600"></i>
+                    <h2 class="text-sky-900 font-semibold tracking-tight">Statistics</h2>
                 </div>
-                <div>
-                    <h4 class="font-medium text-gray-800">View Complaints</h4>
-                    <p class="text-sm text-gray-500">Check status of your submissions</p>
-                </div>
-            </a>
-            <a href="submit_complaints.php" class="card-hover flex items-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
-                <div class="bg-green-50 p-3 rounded-lg mr-4">
-                    <i class="fas fa-file-alt text-green-600 text-lg"></i>
-                </div>
-                <div>
-                    <h4 class="font-medium text-gray-800">Submit Complaint</h4>
-                    <p class="text-sm text-gray-500">File a new complaint</p>
-                </div>
-            </a>
-            <a href="view_cases.php" class="card-hover flex items-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
-                <div class="bg-yellow-50 p-3 rounded-lg mr-4">
-                    <i class="fas fa-gavel text-yellow-600 text-lg"></i>
-                </div>
-                <div>
-                    <h4 class="font-medium text-gray-800">View Cases</h4>
-                    <p class="text-sm text-gray-500">Monitor active cases</p>
-                </div>
-            </a>
-        </div>
-    </div>    <!-- Dashboard Content -->
-    <div class="container mx-auto mt-10 px-4 pb-10">
-        <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
-            <!-- Statistics Section -->
-            <div class="md:col-span-5 bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-                <h2 class="text-lg font-medium text-gray-800 mb-5 flex items-center">
-                    <i class="fas fa-chart-bar text-primary-500 mr-2"></i>
-                    Statistics
-                </h2>
-                
                 <div class="space-y-6">
-                    <div class="flex flex-col">
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="text-sm text-gray-600">Total Complaints</span>
-                            <span id="complaints-count" class="text-sm font-medium text-primary-600 bg-primary-50 px-2 py-0.5 rounded">0</span>
+                    <div>
+                        <div class="flex items-center justify-between mb-2"><span
+                                class="text-xs font-semibold text-sky-800 tracking-wide">Total Complaints</span><span
+                                class="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-sky-100 text-sky-700"><?= $complaintsCount ?></span>
                         </div>
-                        <div class="w-full bg-gray-100 rounded-full h-2">
-                            <div id="complaints-progress" class="progress-bar bg-primary-400 h-2 rounded-full"></div>
-                        </div>
-                    </div>
-                    
-                    <div class="flex flex-col">
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="text-sm text-gray-600">Total Cases</span>
-                            <span id="cases-count" class="text-sm font-medium text-primary-600 bg-primary-50 px-2 py-0.5 rounded">0</span>
-                        </div>
-                        <div class="w-full bg-gray-100 rounded-full h-2">
-                            <div id="cases-progress" class="progress-bar bg-green-400 h-2 rounded-full"></div>
-                        </div>
-                    </div>
-                    
-                    <div class="flex flex-col">
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="text-sm text-gray-600">Pending Complaints</span>
-                            <span id="hearings-count" class="text-sm font-medium text-primary-600 bg-primary-50 px-2 py-0.5 rounded">0</span>
-                        </div>
-                        <div class="w-full bg-gray-100 rounded-full h-2">
-                            <div id="hearings-progress" class="progress-bar bg-yellow-400 h-2 rounded-full"></div>
-                        </div>
-                    </div>
-                    
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="bg-green-50 rounded-lg p-4 flex items-center">
-                            <i class="fas fa-check-circle text-green-500 text-xl mr-3"></i>
+                        <div class="space-y-2">
                             <div>
-                                <p class="text-xs text-gray-500">Resolved Cases</p>
-                                <p id="resolved-count" class="text-lg font-medium text-green-600">0</p>
+                                <div class="flex justify-between text-[10px] font-medium text-amber-700 mb-0.5">
+                                    <span>Pending</span><span><?= $pendingComplaints ?></span></div>
+                                <div class="w-full h-2.5 rounded-full bg-amber-50 overflow-hidden">
+                                    <div class="h-full bg-gradient-to-r from-amber-400 to-amber-500 progress-bar"
+                                        style="width: <?= $pendingComplaintsPercent ?>%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-[10px] font-medium text-emerald-700 mb-0.5">
+                                    <span>Resolved Cases</span><span><?= $resolvedCases ?></span></div>
+                                <div class="w-full h-2.5 rounded-full bg-emerald-50 overflow-hidden">
+                                    <div class="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 progress-bar"
+                                        style="width: <?= $resolvedCasesPercent ?>%"></div>
+                                </div>
                             </div>
                         </div>
-                        
-                        <div class="bg-yellow-50 rounded-lg p-4 flex items-center">
-                            <i class="fas fa-clock text-yellow-500 text-xl mr-3"></i>
+                    </div>
+                    <div>
+                        <div class="flex justify-between mb-1.5 text-xs font-medium text-indigo-800"><span>Case
+                                Overview</span><span
+                                class="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-700"><?= $casesCount ?></span>
+                        </div>
+                        <p class="text-[10px] mt-1 text-indigo-800/70">Pending: <?= $pendingCases ?> • Hearings:
+                            <?= $scheduledHearings ?> • Open: <?= $openCases ?></p>
+                    </div>
+                    <div>
+                        <div class="flex justify-between mb-1.5 text-xs font-medium text-rose-800"><span>Hearings
+                                Scheduled</span><span
+                                class="px-2 py-0.5 rounded-md bg-rose-100 text-rose-700"><?= $scheduledHearings ?></span>
+                        </div>
+                        <div class="w-full bg-white/60 rounded-full progress-wrap overflow-hidden h-2.5">
+                            <div class="progress-bar bg-gradient-to-r from-rose-400 to-rose-500 h-full"
+                                style="width: <?= $hearingPercent ?>%"></div>
+                        </div>
+                        <p class="text-[10px] mt-1 text-rose-800/70">Relative to total cases</p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 pt-2">
+                        <div class="glass rounded-xl p-4 flex items-start gap-3">
+                            <div
+                                class="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600">
+                                <i class="fa-solid fa-circle-check"></i></div>
                             <div>
-                                <p class="text-xs text-gray-500">Pending Cases</p>
-                                <p id="pending-count" class="text-lg font-medium text-yellow-600">0</p>
+                                <p class="text-[10px] tracking-wide uppercase font-semibold text-emerald-700">Resolved
+                                </p>
+                                <p class="text-lg leading-snug font-semibold text-emerald-800"><?= $resolvedCases ?></p>
                             </div>
                         </div>
-                        
-                        <div class="bg-purple-50 rounded-lg p-4 flex items-center col-span-2">
-                            <i class="fas fa-calendar-alt text-purple-500 text-xl mr-3"></i>
+                        <div class="glass rounded-xl p-4 flex items-start gap-3">
+                            <div
+                                class="h-9 w-9 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600">
+                                <i class="fa-solid fa-hourglass-half"></i></div>
                             <div>
-                                <p class="text-xs text-gray-500">Scheduled Hearings</p>
-                                <p id="mediated-count" class="text-lg font-medium text-purple-600">0</p>
+                                <p class="text-[10px] tracking-wide uppercase font-semibold text-amber-700">Pending
+                                    Complaints</p>
+                                <p class="text-lg leading-snug font-semibold text-amber-800"><?= $pendingComplaints ?>
+                                </p>
+                            </div>
+                        </div>
+                        <div class="glass rounded-xl p-4 flex items-start gap-3">
+                            <div
+                                class="h-9 w-9 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600">
+                                <i class="fa-solid fa-calendar-days"></i></div>
+                            <div>
+                                <p class="text-[10px] tracking-wide uppercase font-semibold text-indigo-700">Hearings
+                                </p>
+                                <p class="text-lg leading-snug font-semibold text-indigo-800"><?= $scheduledHearings ?>
+                                </p>
+                            </div>
+                        </div>
+                        <div class="glass rounded-xl p-4 flex items-start gap-3">
+                            <div class="h-9 w-9 rounded-lg bg-sky-100 flex items-center justify-center text-sky-600"><i
+                                    class="fa-solid fa-folder-open"></i></div>
+                            <div>
+                                <p class="text-[10px] tracking-wide uppercase font-semibold text-sky-700">Open Cases</p>
+                                <p class="text-lg leading-snug font-semibold text-sky-800"><?= $openCases ?></p>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-              <!-- Calendar Section -->
-            <div class="md:col-span-7 bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-                <h2 class="text-lg font-medium text-gray-800 mb-5 flex items-center">
-                    <i class="fas fa-calendar text-primary-500 mr-2"></i>
-                    Upcoming Hearings
-                </h2>
-                <div id='calendar' class="calendar-container mt-2"></div>
+            <!-- Calendar Card (Right Column) -->
+            <div class="glass rounded-2xl p-6 md:p-7 fade-in h-full flex flex-col">
+                <div class="flex items-center gap-2 mb-5"><i class="fa-solid fa-calendar-days text-sky-600"></i>
+                    <h2 class="text-sky-900 font-semibold tracking-tight">Upcoming Hearings</h2>
+                </div>
+                <iframe id="resident-calendar" src="../SecMenu/schedule/CalendarResident.php"
+                    class="w-full rounded-xl border border-white/40 h-[640px] bg-white/50"></iframe>
+                <div class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] text-sky-800/80">
+                    
+                </div>
             </div>
         </div>
     </div>
-      <script>        document.addEventListener('DOMContentLoaded', function() {
-            var calendarEl = document.getElementById('calendar');
-            var calendar = new FullCalendar.Calendar(calendarEl, {
-                initialView: 'dayGridMonth',
-                height: 'auto',
-                headerToolbar: {
-                    left: 'prev,next',
-                    center: 'title',
-                    right: 'today'
-                },
-                buttonText: {
-                    today: 'Today'
-                },
-                dayHeaderFormat: { weekday: 'short' },
-                eventTimeFormat: {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    meridiem: 'short'
-                },
-                eventOrder: 'start',
-                eventDisplay: 'block',
-                displayEventTime: true,
-                events: [
-                    { 
-                        title: 'Noise Complaint', 
-                        start: '2025-05-20T10:00:00',
-                        backgroundColor: 'rgba(79, 70, 229, 0.8)',
-                        borderColor: 'rgba(79, 70, 229, 0)',
-                        textColor: '#ffffff',
-                        extendedProps: {
-                            type: 'hearing'
-                        }
-                    },
-                    { 
-                        title: 'Property Dispute', 
-                        start: '2025-05-22T14:00:00',
-                        backgroundColor: 'rgba(79, 70, 229, 0.8)',
-                        borderColor: 'rgba(79, 70, 229, 0)',
-                        textColor: '#ffffff',
-                        extendedProps: {
-                            type: 'hearing'
-                        }
-                    },
-                    { 
-                        title: 'Mediation Session',
-                        start: '2025-05-18T09:00:00',
-                        backgroundColor: 'rgba(3, 105, 161, 0.8)',
-                        borderColor: 'rgba(3, 105, 161, 0)',
-                        textColor: '#ffffff',
-                        extendedProps: {
-                            type: 'mediation'
-                        }
-                    }
-                ],
-                eventClassNames: function(arg) {
-                    return ['shadow-sm'];
-                },
-                eventDidMount: function(info) {
-                    // Add tooltip with improved formatting
-                    const eventType = info.event.extendedProps.type === 'hearing' ? 'Hearing' : 'Mediation';
-                    info.el.setAttribute('title', 
-                        eventType + ': ' + info.event.title + '\n' + 
-                        'Time: ' + info.event.start.toLocaleTimeString('en-US', {hour: 'numeric', minute:'2-digit', hour12: true})
-                    );
-                    
-                    // Add subtle hover effect
-                    info.el.addEventListener('mouseover', function() {
-                        this.style.transform = 'translateY(-2px)';
-                        this.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
-                    });
-                    
-                    info.el.addEventListener('mouseout', function() {
-                        this.style.transform = '';
-                        this.style.boxShadow = '';
-                    });
-                }
-            });
-            calendar.render();
-            
-            // Show animations on load
-            animateStatistics();
-        });
 
-        function animateStatistics() {
-            // Data values
-            const complaints = 10;
-            const cases = 1;
-            const mediated = 2;
-            const resolved = 2;
-            const pending = 0;
-            const hearings = 3;
-            
-            // Maximum value for scaling the progress bars
-            const max = Math.max(complaints, cases, hearings, resolved, pending, mediated, 1);
-            
-            // Set text values
-            document.getElementById('complaints-count').textContent = complaints;
-            document.getElementById('cases-count').textContent = cases;
-            document.getElementById('hearings-count').textContent = hearings;
-            document.getElementById('resolved-count').textContent = resolved;
-            document.getElementById('pending-count').textContent = pending;
-            document.getElementById('mediated-count').textContent = mediated;
-            
-            // Set progress bar widths with delay for animation effect
-            setTimeout(() => {
-                document.getElementById('complaints-progress').style.width = (complaints / max) * 100 + "%";
-            }, 300);
-            
-            setTimeout(() => {
-                document.getElementById('cases-progress').style.width = (cases / max) * 100 + "%";
-            }, 600);
-            
-            setTimeout(() => {
-                document.getElementById('hearings-progress').style.width = (hearings / max) * 100 + "%";
-            }, 900);
-        }
-
-        // Initialize animation on page load
-        window.onload = animateStatistics;
-        
-        // Mobile menu toggle
-        document.addEventListener('DOMContentLoaded', function() {
-            const menuButton = document.getElementById('mobile-menu-button');
-            const mobileMenu = document.getElementById('mobile-menu');
-            
-            if (menuButton && mobileMenu) {
-                menuButton.addEventListener('click', function() {
-                    this.classList.toggle('active');
-                    if (mobileMenu.style.transform === 'translateY(0%)') {
-                        mobileMenu.style.transform = 'translateY(-100%)';
-                    } else {
-                        mobileMenu.style.transform = 'translateY(0%)';
-                    }
-                });            }
-        });
-    </script>
-      <!-- Chatbot Button and Container -->
-    <button class="chatbot-button" id="chatbotButton" aria-label="Open case assistant chatbot">
-        <div class="pulse"></div>
-        <i class="fas fa-robot"></i>
-    </button>
-    
-    <div class="chatbot-container" id="chatbotContainer">
-        <div class="chatbot-header">
-            <h3><i class="fas fa-robot"></i> Case Assistant</h3>
-            <button class="chatbot-close" id="chatbotClose" aria-label="Close chatbot">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <div class="chatbot-body" id="chatbotBody">
-            <!-- Bot welcome message -->
-            <div class="chat-message bot-message">
-                <div class="bot-avatar">
-                    <i class="fas fa-robot"></i>
-                </div>
-                <div class="message-content">
-                    Hi there! I'm your Case Assistant. How can I help you with your barangay cases today?
-                    <div class="message-time">Just now</div>
-                </div>
-            </div>
-        </div>
-        <div class="chatbot-footer">
-            <input type="text" class="chatbot-input" id="chatbotInput" placeholder="Type your question here..." aria-label="Type your message">
-            <button class="send-button" id="sendButton" aria-label="Send message">
-                <i class="fas fa-paper-plane"></i>
-            </button>
-        </div>
-    </div>
-    
     <script>
-        // Chatbot functionality
-        document.addEventListener('DOMContentLoaded', function() {
-            const chatbotButton = document.getElementById('chatbotButton');
-            const chatbotContainer = document.getElementById('chatbotContainer');
-            const chatbotClose = document.getElementById('chatbotClose');
-            const chatbotInput = document.getElementById('chatbotInput');
-            const sendButton = document.getElementById('sendButton');
-            const chatbotBody = document.getElementById('chatbotBody');
-            
-            // Toggle chatbot visibility
-            chatbotButton.addEventListener('click', function() {
-                chatbotContainer.classList.toggle('active');
-                chatbotInput.focus();
-            });
-            
-            // Close chatbot
-            chatbotClose.addEventListener('click', function() {
-                chatbotContainer.classList.remove('active');
-            });
-            
-            // Send message function
-            function sendMessage() {
-                const message = chatbotInput.value.trim();
-                if (message === '') return;
-                
-                // Add user message to chat
-                const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                const userMessageHTML = `
-                    <div class="chat-message user-message">
-                        <div class="message-content">
-                            ${message}
-                            <div class="message-time">${timestamp}</div>
-                        </div>
-                    </div>
-                `;
-                
-                chatbotBody.innerHTML += userMessageHTML;
-                chatbotInput.value = '';
-                chatbotBody.scrollTop = chatbotBody.scrollHeight;
-                
-                // Simulate bot typing
-                setTimeout(() => {
-                    const botResponse = getBotResponse(message);
-                    const botMessageHTML = `
-                        <div class="chat-message bot-message">
-                            <div class="bot-avatar">
-                                <i class="fas fa-robot"></i>
-                            </div>
-                            <div class="message-content">
-                                ${botResponse}
-                                <div class="message-time">${timestamp}</div>
-                            </div>
-                        </div>
-                    `;
-                    
-                    chatbotBody.innerHTML += botMessageHTML;
-                    chatbotBody.scrollTop = chatbotBody.scrollHeight;
-                }, 800);
+        // Dynamic iframe height (best effort same-origin assumption)
+        function adjustResidentCalendarHeight() {
+            const iframe = document.getElementById('resident-calendar');
+            if (!iframe) return;
+            try {
+                const doc = iframe.contentDocument || iframe.contentWindow.document;
+                if (!doc) return;
+                const innerRoot = doc.querySelector('.fc') || doc.body;
+                const desired = innerRoot.scrollHeight + 40;
+                if (desired > 0) iframe.style.height = desired + 'px';
+            } catch (e) {
+                const vw = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
+                iframe.style.height = (vw < 640 ? 480 : 640) + 'px';
             }
-            
-            // Send message on button click
-            sendButton.addEventListener('click', sendMessage);
-            
-            // Send message on Enter key
-            chatbotInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    sendMessage();
-                }
-            });
-            
-            // Simple bot response function
-            function getBotResponse(message) {
-                message = message.toLowerCase();
-                
-                if (message.includes('hello') || message.includes('hi') || message.includes('hey')) {
-                    return 'Hello! How can I assist you with your case today?';
-                }
-                else if (message.includes('case status') || message.includes('status')) {
-                    return 'To check your case status, please go to the "View Cases" section where you can see all your active and resolved cases.';
-                }
-                else if (message.includes('hearing') || message.includes('schedule')) {
-                    return 'Your next hearing is scheduled for May 20, 2025. You can view all upcoming hearings in the calendar section of your dashboard.';
-                }
-                else if (message.includes('mediation') || message.includes('mediator')) {
-                    return 'Mediation sessions are conducted by trained Lupong Tagapamayapa members. Your upcoming mediation session is scheduled for May 18, 2025.';
-                }
-                else if (message.includes('complaint') || message.includes('file') || message.includes('submit')) {
-                    return 'To file a new complaint, click on the "Submit Complaint" button in the Quick Actions section of your dashboard.';
-                }
-                else if (message.includes('contact') || message.includes('barangay') || message.includes('office')) {
-                    return 'You can contact the Barangay Office at (123) 456-7890 or visit them during office hours: Monday to Friday, 8:00 AM to 5:00 PM.';
-                }
-                else if (message.includes('thank')) {
-                    return 'You\'re welcome! Is there anything else I can help you with?';
-                }
-                else {
-                    return 'I\'m not sure I understand. Could you please rephrase your question? You can ask about case status, hearings, complaints, or contact information.';
-                }
-            }
-        });
+        }
+        window.addEventListener('resize', () => { cancelAnimationFrame(window.__rcResizeReq); window.__rcResizeReq = requestAnimationFrame(adjustResidentCalendarHeight); });
+        setTimeout(adjustResidentCalendarHeight, 900);
     </script>
+    <?php include('../chatbot/bpamis_case_assistant.php'); ?>
+    <?php if (isset($_GET['out_of_scope']) && $_GET['out_of_scope'] == 1): ?>
+        <script>
+            document.addEventListener('DOMContentLoaded', () => {
+                alert("⚠️ This complaint may be out of the barangay's scope.\n\nPlease consider contacting the local police.\n\nPolice Hotline: 0990-598-5380\n\nYour complaint has still been recorded.");
+            });
+        </script>
+    <?php endif; ?>
 </body>
+
 </html>

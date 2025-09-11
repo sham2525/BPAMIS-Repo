@@ -1,0 +1,5 @@
+
+         
+
+         
+{"id":"gen-1757603666-6njPwp8ymFx0extsb4PU","provider":"DeepInfra","model":"meta-llama/llama-3-8b-instruct","object":"chat.completion","created":1757603666,"choices":[{"logprobs":null,"finish_reason":"stop","native_finish_reason":"stop","index":0,"message":{"role":"assistant","content":"Katarungang Pambarangay (KP) is a community-based dispute settlement system mandated by the Local Government Code of 1991 (RA 7160, Title One, Chapter 7). Its main goal is to resolve disputes quickly and inexpensively at the barangay level without going to court.","refusal":null,"reasoning":null}}],"usage":{"prompt_tokens":618,"completion_tokens":61,"total_tokens":679,"prompt_tokens_details":null}}
