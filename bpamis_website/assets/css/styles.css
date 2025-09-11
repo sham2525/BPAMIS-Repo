@@ -1,0 +1,90 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Open+Sans:wght@400;600&display=swap');
+
+body, p, li, span, input, button, a {
+  font-family: 'Open Sans', Arial, sans-serif;
+}
+h1, h2, h3, h4, h5, h6, .font-heading {
+  font-family: 'Montserrat', Arial, sans-serif;
+}
+
+.nav-link {
+    @apply text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition duration-300;
+}
+
+.nav-link.active {
+    @apply text-blue-600 font-semibold;
+}
+
+/* Add hover effects */
+.hover-scale {
+    @apply transform transition-transform duration-300 hover:scale-105;
+}
+
+/* Card styles */
+.card {
+    @apply bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow duration-300;
+}
+
+html, body {
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 12px;
+  background: #f0f4fa;
+}
+::-webkit-scrollbar-thumb {
+  background: #2563eb;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #1746a2;
+}
+
+html {
+  scrollbar-color: #2563eb #f0f4fa;
+  scrollbar-width: thin;
+}
+
+/* Fixed Navbar Utility Class */
+.fixed-navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 50;
+}
+
+.demographics-collapsed {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s;
+}
+#demographicsWrapper .demographics-card {
+  max-height: 500px;
+  opacity: 1;
+  transition: max-height 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s;
+}
+
+.slide-up-element {
+  opacity: 0;
+  transform: translateY(40px);
+  transition: opacity 0.7s cubic-bezier(0.4,0,0.2,1), transform 0.7s cubic-bezier(0.4,0,0.2,1);
+}
+.slide-up-element.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.flip-in-element {
+  opacity: 0;
+  transform: rotateX(90deg);
+  transition: opacity 1.2s cubic-bezier(0.60, 0.61, 0.36, 1), transform 1.2s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transform-origin: bottom;
+}
+.flip-in-element.visible {
+  opacity: 1;
+  transform: rotateX(0deg);
+}
