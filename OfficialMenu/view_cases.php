@@ -231,6 +231,9 @@ $respondents_display = !empty($respondent_names) ? implode(', ', $respondent_nam
             <a href="view_case_details.php?id=<?= urlencode($case['Case_ID']) ?>" class="text-primary-600 hover:text-primary-800 transition p-1" title="View Details">
                 <i class="fas fa-eye"></i>
             </a>
+            <a href="update_case_details.php?id=<?= urlencode($case['Case_ID']) ?>" class="text-amber-600 hover:text-amber-800 transition p-1" title="Assign Lupon (Edit)">
+                <i class="fas fa-edit"></i>
+            </a>
         </div>
     </td>
 </tr>

@@ -10,12 +10,7 @@ if ($resultComplaints && $row = $resultComplaints->fetch_assoc()) {
     $notif_count += $row['count'];
 }
 
-// Count unverified residents
-$sqlUnverified = "SELECT COUNT(*) AS count FROM resident_info WHERE isverify = 0";
-$resultUnverified = $conn->query($sqlUnverified);
-if ($resultUnverified && $row = $resultUnverified->fetch_assoc()) {
-    $notif_count += $row['count'];
-}
+
 ?>
 
 <!-- Navigation Bar -->

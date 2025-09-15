@@ -12,11 +12,6 @@ if ($conn->connect_error) {
     die('Connection failed: ' . $conn->connect_error);
 }
 
-// Detect optional lupon_assign column
-$hasLuponAssign = false;
-$__col_l = $conn->query("SHOW COLUMNS FROM CASE_INFO LIKE 'lupon_assign'");
-if ($__col_l && $__col_l->num_rows > 0) { $hasLuponAssign = true; }
-
 // Detect optional COMPLAINT_INFO.case_type column
 $hasComplaintCaseType = false;
 $__col_ct = $conn->query("SHOW COLUMNS FROM COMPLAINT_INFO LIKE 'case_type'");
@@ -24,8 +19,7 @@ if ($__col_ct && $__col_ct->num_rows > 0) { $hasComplaintCaseType = true; }
 
 // Fetch core case info (guard prepare and provide fallback)
 $sql =
-    "SELECT cs.Case_ID, cs.Case_Status, cs.Date_Opened, " .
-    ($hasLuponAssign ? "cs.lupon_assign" : "NULL AS lupon_assign") . ",\n" .
+    "SELECT cs.Case_ID, cs.Case_Status, cs.Date_Opened,\n" .
     "        ci.Complaint_ID, ci.Complaint_Title, ci.Complaint_Details, ci.Date_Filed, ci.case_type,\n" .
     "        comp.First_Name AS Complainant_First, comp.Last_Name AS Complainant_Last,\n" .
     "        resp.First_Name AS Respondent_First, resp.Last_Name AS Respondent_Last\n" .
@@ -59,12 +53,7 @@ $case = $result->fetch_assoc();
 // Capture complaint id for updates
 $complaintId = isset($case['Complaint_ID']) ? intval($case['Complaint_ID']) : 0;
 
-// Fetch Lupon Tagapamayapa names for suggestions
-$luponNames = [];
-$luponQ = $conn->query("SELECT name FROM barangay_officials WHERE LOWER(TRIM(Position)) = 'lupon tagapamayapa' ORDER BY name ASC");
-if ($luponQ && $luponQ->num_rows > 0) {
-    while ($r = $luponQ->fetch_assoc()) { $luponNames[] = trim($r['name']); }
-}
+// Removed: Secretary does not assign Lupon Tagapamayapa
 
 // Resolve case type display from COMPLAINT_INFO.case_type if present, else fallback to CASE_INFO.Case_Type
 $caseType = '';
@@ -99,9 +88,6 @@ $available = $transitions[$current] ?? [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $newStatus = $_POST['status'] ?? '';
-    // Allow assigning Lupon (mediator) even if status remains the same
-    $luponAssign = isset($_POST['lupon_assign']) ? trim($_POST['lupon_assign']) : '';
-    $luponUpdated = false;
     $caseTypeUpdated = false;
 
     // Optional: update complaint case_type when provided
@@ -125,75 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
-    if ($luponAssign !== '' && $hasLuponAssign) {
-        if ($m = $conn->prepare('UPDATE CASE_INFO SET lupon_assign = ? WHERE Case_ID = ?')) {
-            $m->bind_param('si', $luponAssign, $caseId);
-            $m->execute();
-            $m->close();
-            $luponUpdated = true;
-        } else {
-            $conn->query("UPDATE CASE_INFO SET lupon_assign = '" . $conn->real_escape_string($luponAssign) . "' WHERE Case_ID = $caseId");
-            $luponUpdated = true;
-        }
-        // Send notifications to each assigned Lupon (match by Name -> Official_ID) using value from DB
-        $assignStr = '';
-        if ($gs = $conn->prepare('SELECT lupon_assign FROM CASE_INFO WHERE Case_ID = ?')) {
-            $gs->bind_param('i', $caseId);
-            $gs->execute();
-            $gRes = $gs->get_result();
-            if ($gRes && $gRes->num_rows > 0) {
-                $gr = $gRes->fetch_assoc();
-                $assignStr = (string)($gr['lupon_assign'] ?? '');
-            }
-            $gs->close();
-        } else {
-            $gq = $conn->query("SELECT lupon_assign FROM CASE_INFO WHERE Case_ID = $caseId");
-            if ($gq && $gq->num_rows > 0) {
-                $gr = $gq->fetch_assoc();
-                $assignStr = (string)($gr['lupon_assign'] ?? '');
-            }
-        }
-
-        $names = array_values(array_filter(array_map('trim', explode(',', $assignStr))));
-        if (!empty($names)) {
-            // Prepare reusable statements
-            $findStmt = $conn->prepare("SELECT Official_ID FROM barangay_officials WHERE Position = 'Lupon Tagapamayapa' AND Name = ? LIMIT 1");
-            $checkStmt = $conn->prepare("SELECT 1 FROM notifications WHERE lupon_id = ? AND type = 'Case' AND message LIKE ? LIMIT 1");
-            $notifStmt = $conn->prepare("INSERT INTO notifications (title, message, type, created_at, lupon_id, is_read) VALUES (?, ?, ?, NOW(), ?, 0)");
-            if ($findStmt && $notifStmt) {
-                foreach ($names as $nm) {
-                    if ($nm === '') continue;
-                    $findStmt->bind_param('s', $nm);
-                    $findStmt->execute();
-                    $res = $findStmt->get_result();
-                    if ($res && $res->num_rows > 0) {
-                        $off = $res->fetch_assoc();
-                        $luponId = (int)$off['Official_ID'];
-                        $title = 'New Case Assigned';
-                        $message = "You have been assigned to Case #$caseId.";
-                        $type = 'Case';
-                        // Dedupe: skip if a similar notification for this lupon and case already exists
-                        if ($checkStmt) {
-                            $like = "%Case #$caseId%";
-                            $checkStmt->bind_param('is', $luponId, $like);
-                            $checkStmt->execute();
-                            $cr = $checkStmt->get_result();
-                            $exists = ($cr && $cr->num_rows > 0);
-                        } else {
-                            $exists = false; // best effort
-                        }
-                        if (!$exists) {
-                            $notifStmt->bind_param('sssi', $title, $message, $type, $luponId);
-                            $notifStmt->execute();
-                        }
-                    }
-                }
-                $findStmt->close();
-                if ($checkStmt) { $checkStmt->close(); }
-                $notifStmt->close();
-            }
-        }
-    }
+    // Removed: Secretary assigning Lupon capability
     if (in_array($newStatus, $available, true)) {
         $upd = $conn->prepare('UPDATE CASE_INFO SET Case_Status=? WHERE Case_ID=?');
         if ($upd) {
@@ -250,10 +168,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: view_cases.php?status_updated=1');
         exit;
     }
-    // If only mediator and/or case type were updated (no status change), refresh to show latest value
-    if ((!in_array($newStatus, $available, true)) && ($luponUpdated || $caseTypeUpdated)) {
+    // If only case type was updated (no status change), refresh to show latest value
+    if ((!in_array($newStatus, $available, true)) && ($caseTypeUpdated)) {
         $flags = [];
-        if ($luponUpdated) { $flags[] = 'lupon_updated=1'; }
         if ($caseTypeUpdated) { $flags[] = 'case_type_updated=1'; }
         $qs = implode('&', $flags);
         header('Location: update_case_status.php?id=' . $caseId . ($qs ? ('&' . $qs) : ''));
@@ -378,110 +295,7 @@ $statusClass = $statusStyles[$statusUpper] ?? 'bg-primary-50 text-primary-600 bo
                     </div>
                     
                 </div>
-                <?php if ($hasLuponAssign): ?>
-                <div>
-                    <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-3">Assign Lupon Tagapamayapa</h2>
-                    <form method="POST" class="space-y-3">
-                        <div>
-                            <label class="field-label mb-2 block">Lupon Name(s)</label>
-                            <div id="luponChips" class="flex flex-wrap gap-2 mb-2"></div>
-                            <input id="luponAssignHidden" type="hidden" name="lupon_assign" value="<?= htmlspecialchars($case['lupon_assign'] ?? '') ?>" />
-                            <input id="luponInput" list="luponList" placeholder="Type a Lupon name and press Enter" class="w-full px-4 py-3 rounded-lg border border-gray-300 bg-white/80 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition text-sm" />
-                            <datalist id="luponList">
-                                <?php foreach ($luponNames as $ln): ?>
-                                    <option value="<?= htmlspecialchars($ln) ?>"></option>
-                                <?php endforeach; ?>
-                            </datalist>
-                            <p class="mt-1 text-xs text-gray-500">Tip: Add multiple Lupon names. Type a name and press Enter, or pick from suggestions; click × on a chip to remove.</p>
-                        </div>
-                        <div>
-                            <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white shadow text-sm font-medium transition"><i class="fa fa-user-plus"></i> Save Assignment</button>
-                            <?php if (!empty($_GET['lupon_updated'])): ?>
-                                <span class="ml-3 text-emerald-700 text-sm">Assignment saved.</span>
-                            <?php endif; ?>
-                        </div>
-                    </form>
-                    <script>
-                        (function () {
-                            try {
-                                const chipsEl = document.getElementById('luponChips');
-                                const hiddenEl = document.getElementById('luponAssignHidden');
-                                const inputEl = document.getElementById('luponInput');
-                                if (!chipsEl || !hiddenEl || !inputEl) return;
-
-                                const initial = (function() {
-                                    try {
-                                        return <?php 
-                                            $initialLupon = array_values(array_filter(array_map('trim', explode(',', $case['lupon_assign'] ?? ''))));
-                                            echo json_encode($initialLupon, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT);
-                                        ?>;
-                                    } catch (e) { return []; }
-                                })();
-
-                                let selected = Array.from(new Set(initial.filter(Boolean)));
-
-                                function syncHidden() {
-                                    hiddenEl.value = selected.join(', ');
-                                }
-
-                                function render() {
-                                    chipsEl.innerHTML = '';
-                                    selected.forEach((name, idx) => {
-                                        const chip = document.createElement('span');
-                                        chip.className = 'inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-50 text-primary-700 border border-primary-200 text-xs font-medium';
-                                        const text = document.createElement('span');
-                                        text.textContent = name;
-                                        const btn = document.createElement('button');
-                                        btn.type = 'button';
-                                        btn.className = 'ml-1 inline-flex items-center justify-center h-5 w-5 rounded-full bg-primary-100 hover:bg-primary-200 text-primary-700';
-                                        btn.setAttribute('aria-label', 'Remove ' + name);
-                                        btn.innerHTML = '<i class="fa fa-times text-[10px]"></i>';
-                                        btn.addEventListener('click', function () {
-                                            selected = selected.filter(n => n !== name);
-                                            render();
-                                            syncHidden();
-                                        });
-                                        chip.appendChild(text);
-                                        chip.appendChild(btn);
-                                        chipsEl.appendChild(chip);
-                                    });
-                                }
-
-                                function addName(raw) {
-                                    if (!raw) return;
-                                    // Support comma-separated input; split and add each
-                                    const parts = String(raw).split(',').map(s => s.trim()).filter(Boolean);
-                                    let changed = false;
-                                    parts.forEach(p => {
-                                        if (p && !selected.includes(p)) { selected.push(p); changed = true; }
-                                    });
-                                    if (changed) { render(); syncHidden(); }
-                                }
-
-                                inputEl.addEventListener('keydown', function (e) {
-                                    if (e.key === 'Enter' || e.key === ',') {
-                                        e.preventDefault();
-                                        addName(inputEl.value.replace(/,+$/,'').trim());
-                                        inputEl.value = '';
-                                    }
-                                });
-                                inputEl.addEventListener('change', function () {
-                                    if (inputEl.value && inputEl.value.trim() !== '') {
-                                        addName(inputEl.value.trim());
-                                        inputEl.value = '';
-                                    }
-                                });
-
-                                // Initialize
-                                render();
-                                syncHidden();
-                            } catch (err) {
-                                console && console.warn && console.warn('Lupon chips init failed:', err);
-                            }
-                        })();
-                    </script>
-                </div>
-                <?php endif; ?>
+                <!-- Lupon Tagapamayapa assignment UI removed for Secretary -->
                 <div>
                     <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-3">Update Status</h2>
                     <form method="POST" class="space-y-5">
