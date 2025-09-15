@@ -59,8 +59,8 @@ function cc($k,$arr){ return $arr[$k] ?? 0; }
             <div class="hidden md:flex flex-col gap-3 min-w-[250px]">
                 <div class="grid grid-cols-3 gap-2">
                     <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-primary-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-primary-500 font-semibold">Pending</span><span class="mt-1 text-lg font-semibold text-primary-700"><?= cc('Pending',$complaintCounts) ?></span></div>
-                    <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-blue-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-blue-600 font-semibold">Sched Hearing</span><span class="mt-1 text-lg font-semibold text-blue-700"><?= cc('Scheduled for Hearing',$complaintCounts) ?></span></div>
-                    <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-green-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-green-600 font-semibold">Resolved</span><span class="mt-1 text-lg font-semibold text-green-700"><?= cc('Resolved',$complaintCounts) ?></span></div>
+                    <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-blue-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-blue-600 font-semibold">In Case</span><span class="mt-1 text-lg font-semibold text-blue-700"><?= cc('IN CASE',$complaintCounts) ?></span></div>
+                    <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-rose-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-rose-600 font-semibold">Rejected</span><span class="mt-1 text-lg font-semibold text-rose-700"><?= cc('Rejected',$complaintCounts) ?></span></div>
                 </div>
                 <div class="text-[11px] text-primary-700/70 text-center">Status overview</div>
             </div>
@@ -91,11 +91,11 @@ function cc($k,$arr){ return $arr[$k] ?? 0; }
                 <div class="flex flex-wrap gap-2 pt-1" id="statusChips">
                     <button type="button" data-status="" class="c-chip active px-3 py-1.5 text-xs font-medium rounded-full bg-primary-600 text-white shadow-sm">All</button>
                     <button type="button" data-status="Pending" class="c-chip px-3 py-1.5 text-xs font-medium rounded-full bg-amber-50 text-amber-600 border border-amber-100 hover:bg-amber-100 transition">Pending</button>
-                    <button type="button" data-status="Scheduled for Hearing" class="c-chip px-3 py-1.5 text-xs font-medium rounded-full bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 transition">Hearing</button>
-                    <button type="button" data-status="Resolved" class="c-chip px-3 py-1.5 text-xs font-medium rounded-full bg-green-50 text-green-600 border border-green-100 hover:bg-green-100 transition">Resolved</button>
+                    <button type="button" data-status="IN CASE" class="c-chip px-3 py-1.5 text-xs font-medium rounded-full bg-green-50 text-green-600 border border-green-100 hover:bg-green-100 transition">In Case</button>
+                    <button type="button" data-status="Rejected" class="c-chip px-3 py-1.5 text-xs font-medium rounded-full bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100 transition">Rejected</button>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
-                    <div class="md:col-span-5 relative group">
+                    <div class="md:col-span-7 relative group">
                         <input id="searchInput" type="text" placeholder="Search by ID, complainant, respondent, description..." class="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200/80 bg-white/70 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 placeholder:text-gray-400 text-sm transition" />
                         <i class="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-primary-400 group-focus-within:text-primary-500 transition"></i>
                     </div>
@@ -117,16 +117,7 @@ function cc($k,$arr){ return $arr[$k] ?? 0; }
                         </select>
                         <i class="fa-solid fa-caret-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-primary-400"></i>
                     </div>
-                    <div class="md:col-span-2 relative">
-                        <select id="typeFilter" class="w-full pl-3 pr-8 py-3 rounded-xl border border-gray-200 bg-white/70 text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 appearance-none">
-                            <option value="">All Types</option>
-                            <option value="noise">Noise Complaint</option>
-                            <option value="property">Property Dispute</option>
-                            <option value="debt">Unpaid Debt</option>
-                            <option value="others">Others</option>
-                        </select>
-                        <i class="fa-solid fa-caret-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-primary-400"></i>
-                    </div>
+                    
                     <div class="md:col-span-1 flex">
                         <button id="resetFilters" class="w-full inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl border border-primary-100 bg-primary-50/60 text-primary-600 text-sm font-medium hover:bg-primary-100 transition"><i class="fa-solid fa-rotate-left"></i><span class="hidden xl:inline">Reset</span></button>
                     </div>
@@ -173,6 +164,7 @@ function cc($k,$arr){ return $arr[$k] ?? 0; }
                                 case 'Pending': $sClass='text-amber-700 bg-amber-50 border border-amber-200'; $sIcon='fa-clock'; break;
                                 case 'Scheduled for Hearing': $sClass='text-blue-700 bg-blue-50 border border-blue-200'; $sIcon='fa-calendar-check'; break;
                                 case 'Resolved': $sClass='text-green-700 bg-green-50 border border-green-200'; $sIcon='fa-check-circle'; break;
+                                case 'Rejected': $sClass='text-rose-700 bg-rose-50 border border-rose-200'; $sIcon='fa-ban'; break;
                                 default: $sClass='text-gray-700 bg-gray-50 border border-gray-200'; $sIcon='fa-info-circle';
                             }
                     ?>
@@ -185,7 +177,7 @@ function cc($k,$arr){ return $arr[$k] ?? 0; }
                             <td class="p-3 text-sm whitespace-nowrap"><span class="px-2.5 py-1 rounded-full text-[11px] font-semibold <?= $sClass ?>"><i class="fas <?= $sIcon ?> mr-1"></i><?= $status ?></span></td>
                             <td class="p-3 text-center">
                                 <div class="flex justify-center gap-1.5">
-                                    <a href="view_complaint_details.php?id=<?= $complaint['Complaint_ID'] ?>" class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-primary-500 hover:text-white hover:bg-primary-500 transition text-sm" title="View Details"><i class="fas fa-eye"></i></a>
+                              
                                     <a href="view_complaint_details.php?id=<?= $complaint['Complaint_ID'] ?>&edit=true" class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-amber-500 hover:text-white hover:bg-amber-500 transition text-sm" title="Edit"><i class="fas fa-edit"></i></a>
                                 </div>
                             </td>
@@ -213,19 +205,17 @@ document.addEventListener('DOMContentLoaded', function(){
     const searchInput=document.getElementById('searchInput');
     const monthFilter=document.getElementById('monthFilter');
     const yearFilter=document.getElementById('yearFilter');
-    const typeFilter=document.getElementById('typeFilter');
     const resetBtn=document.getElementById('resetFilters');
     const rows=document.querySelectorAll('#complaintsTableBody tr.table-row');
     const visibleCount=document.getElementById('visibleCount');
     const rangeDisplay=document.getElementById('rangeDisplay');
     const chips=document.querySelectorAll('.c-chip');
     let statusOverride='';
-    function matchesType(desc,val){ if(!val) return true; desc=desc.toLowerCase(); if(val==='noise') return /noise|loud|disturb/i.test(desc); if(val==='property') return /property|lot|boundary|damage/i.test(desc); if(val==='debt') return /debt|money|loan|unpaid/i.test(desc); if(val==='others') return !(matchesType(desc,'noise')||matchesType(desc,'property')||matchesType(desc,'debt')); return true; }
-    function filterAll(){ const q=(searchInput.value||'').toLowerCase(); const m=monthFilter.value; const y=yearFilter.value; const t=typeFilter.value; let shown=0; rows.forEach(r=>{ const id=r.querySelector('td:nth-child(1)')?.textContent.toLowerCase()||''; const complainant=r.querySelector('td:nth-child(2)')?.textContent.toLowerCase()||''; const respondents=r.querySelector('td:nth-child(3)')?.textContent.toLowerCase()||''; const desc=r.querySelector('td:nth-child(4) span')?.title.toLowerCase()||''; const dateText=r.dataset.datefiled||''; const statusText=r.querySelector('td:nth-child(6) span')?.textContent.toLowerCase()||''; let show=true; if(q){ show=id.includes(q)||complainant.includes(q)||respondents.includes(q)||desc.includes(q); } if(show&&statusOverride){ show=statusText.includes(statusOverride.toLowerCase()); } if(show&&(m||y)&&dateText){ const parts=dateText.split('-'); const Y=parts[0]; const M=parts[1]; if(m) show=show&&parseInt(M)==parseInt(m); if(y) show=show&&parseInt(Y)==parseInt(y); } if(show&&t){ show=matchesType(desc,t); } r.style.display=show?'':'none'; if(show) shown++; }); visibleCount.textContent=shown+' Showing'; if(rangeDisplay) rangeDisplay.textContent='Showing '+shown+' entr'+(shown===1?'y':'ies'); }
-    function resetFilters(){ searchInput.value=''; monthFilter.value=''; yearFilter.value=''; typeFilter.value=''; statusOverride=''; chips.forEach(c=>c.classList.remove('active','bg-primary-600','text-white','shadow')); chips[0].classList.add('active','bg-primary-600','text-white','shadow'); filterAll(); }
+    function filterAll(){ const q=(searchInput.value||'').toLowerCase(); const m=monthFilter.value; const y=yearFilter.value; let shown=0; rows.forEach(r=>{ const id=r.querySelector('td:nth-child(1)')?.textContent.toLowerCase()||''; const complainant=r.querySelector('td:nth-child(2)')?.textContent.toLowerCase()||''; const respondents=r.querySelector('td:nth-child(3)')?.textContent.toLowerCase()||''; const desc=r.querySelector('td:nth-child(4) span')?.title.toLowerCase()||''; const dateText=r.dataset.datefiled||''; const statusText=r.querySelector('td:nth-child(6) span')?.textContent.toLowerCase()||''; let show=true; if(q){ show=id.includes(q)||complainant.includes(q)||respondents.includes(q)||desc.includes(q); } if(show&&statusOverride){ show=statusText.includes(statusOverride.toLowerCase()); } if(show&&(m||y)&&dateText){ const parts=dateText.split('-'); const Y=parts[0]; const M=parts[1]; if(m) show=show&&parseInt(M)==parseInt(m); if(y) show=show&&parseInt(Y)==parseInt(y); } r.style.display=show?'':'none'; if(show) shown++; }); visibleCount.textContent=shown+' Showing'; if(rangeDisplay) rangeDisplay.textContent='Showing '+shown+' entr'+(shown===1?'y':'ies'); }
+    function resetFilters(){ searchInput.value=''; monthFilter.value=''; yearFilter.value=''; statusOverride=''; chips.forEach(c=>c.classList.remove('active','bg-primary-600','text-white','shadow')); chips[0].classList.add('active','bg-primary-600','text-white','shadow'); filterAll(); }
     chips.forEach(chip=>{ chip.addEventListener('click',()=>{ chips.forEach(c=>c.classList.remove('active','bg-primary-600','text-white','shadow')); chip.classList.add('active','bg-primary-600','text-white','shadow'); statusOverride=chip.dataset.status||''; filterAll(); }); });
-    [searchInput,monthFilter,yearFilter,typeFilter].forEach(el=> el.addEventListener('input',filterAll));
-    monthFilter.addEventListener('change',filterAll); yearFilter.addEventListener('change',filterAll); typeFilter.addEventListener('change',filterAll); resetBtn.addEventListener('click',resetFilters); filterAll();
+    [searchInput,monthFilter,yearFilter].forEach(el=> el.addEventListener('input',filterAll));
+    monthFilter.addEventListener('change',filterAll); yearFilter.addEventListener('change',filterAll); resetBtn.addEventListener('click',resetFilters); filterAll();
     if(typeof menuButton!=='undefined' && typeof mobileMenu!=='undefined'){ menuButton.addEventListener('click',function(){ this.classList.toggle('active'); mobileMenu.style.transform=(mobileMenu.style.transform==='translateY(0%)')? 'translateY(-100%)':'translateY(0%)'; }); }
 });
 </script>

@@ -1,5 +1,7 @@
 <?php
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 include '../server/server.php';
 
@@ -10,16 +12,35 @@ if (!isset($_SESSION['official_id'])) {
 
 $luponId = $_SESSION['official_id'];
 
-// Fetch notifications only for this Lupon and of relevant types
+// Optional: fetch Lupon name for fallback matching
+$luponName = '';
+if ($stn = $conn->prepare("SELECT Name FROM barangay_officials WHERE Official_ID = ?")) {
+        $stn->bind_param('i', $luponId);
+        $stn->execute();
+        $rn = $stn->get_result();
+        if ($rn && $r = $rn->fetch_assoc()) { $luponName = trim((string)($r['Name'] ?? '')); }
+        $stn->close();
+}
+
+// Fetch notifications only for this Lupon and of relevant types (primary by lupon_id)
 $sql = "SELECT * FROM notifications 
-        WHERE lupon_id = ? 
-          AND type IN ('Unverified', 'Hearing', 'Complaint', 'Case') 
-        ORDER BY created_at DESC";
+                WHERE lupon_id = ? 
+                    AND type IN ('Unverified', 'Hearing', 'Complaint', 'Case') 
+                ORDER BY created_at DESC";
 
 $stmt = $conn->prepare($sql);
-$stmt->bind_param("i", $luponId);
-$stmt->execute();
-$result = $stmt->get_result();
+if ($stmt) {
+    $stmt->bind_param("i", $luponId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $stmt->close();
+} else {
+    // Fallback: log error and run safe direct query (luponId is from session; cast to int)
+    error_log("notifications-lupon prepare failed: " . $conn->error);
+    $luponIdInt = (int)$luponId;
+    $fallbackSql = "SELECT * FROM notifications WHERE lupon_id = $luponIdInt AND type IN ('Unverified','Hearing','Complaint','Case') ORDER BY created_at DESC";
+    $result = $conn->query($fallbackSql);
+}
 
 $notifications = [];
 if ($result && $result->num_rows > 0) {
@@ -27,7 +48,31 @@ if ($result && $result->num_rows > 0) {
         $notifications[] = $row;
     }
 }
-$stmt->close();
+
+// Fallback: if no direct lupon_id matches and we have a name, try matching name in title or message (legacy rows)
+if (empty($notifications) && $luponName !== '') {
+    $sql2 = "SELECT * FROM notifications 
+             WHERE type IN ('Unverified','Hearing','Complaint','Case')
+               AND (title LIKE CONCAT('%', ?, '%') OR message LIKE CONCAT('%', ?, '%'))
+             ORDER BY created_at DESC";
+    if ($st2 = $conn->prepare($sql2)) {
+        $st2->bind_param('ss', $luponName, $luponName);
+        $st2->execute();
+        $res2 = $st2->get_result();
+        if ($res2 && $res2->num_rows > 0) {
+            while ($row = $res2->fetch_assoc()) { $notifications[] = $row; }
+        }
+        $st2->close();
+    } else {
+        $n = $conn->real_escape_string($luponName);
+        $fallback2 = "SELECT * FROM notifications WHERE type IN ('Unverified','Hearing','Complaint','Case') AND (title LIKE '%$n%' OR message LIKE '%$n%') ORDER BY created_at DESC";
+        $res2 = $conn->query($fallback2);
+        if ($res2 && $res2->num_rows > 0) {
+            while ($row = $res2->fetch_assoc()) { $notifications[] = $row; }
+        }
+    }
+}
+
 
 
 ?>
@@ -132,54 +177,79 @@ $stmt->close();
         
     </style>
 </head>
-<body class="bg-gray-50 font-sans">
+<body class="bg-gray-50 font-sans relative overflow-x-hidden">
     <?php include_once ('../includes/barangay_official_lupon_nav.php'); ?>
     <?php include_once ('../chatbot/bpamis_case_assistant.php'); ?>
     <!-- Page Header -->
-    <div class="w-full mt-10 px-4">
-        <div class="gradient-bg rounded-2xl shadow-sm p-8 md:p-10 relative overflow-hidden">
-            <div class="absolute top-0 right-0 w-64 h-64 bg-primary-100 rounded-full -mr-20 -mt-20 opacity-70"></div>
-            <div class="absolute bottom-0 left-0 w-40 h-40 bg-primary-200 rounded-full -ml-10 -mb-10 opacity-60"></div>
-            <div class="relative z-10 flex justify-between items-center">
+    <div class="w-full mt-6 px-4">
+        <div class="relative gradient-bg max-w-7xl mx-auto rounded-2xl shadow-sm p-8 md:p-10 overflow-hidden">
+            <div class="absolute top-0 right-0 w-64 h-64 bg-primary-100 rounded-full -mr-20 -mt-20 opacity-70 animate-float"></div>
+            <div class="absolute bottom-0 left-0 w-40 h-40 bg-primary-200 rounded-full -ml-10 -mb-10 opacity-60 animate-float"></div>
+            <div class="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
                     <h2 class="text-3xl font-light text-primary-800">Your <span class="font-medium">Notifications</span></h2>
                     <p class="mt-3 text-gray-600 max-w-md">Stay updated with the latest activity in your cases and complaints.</p>
                 </div>
-                <div class="hidden md:flex items-center">
-                    <div class="w-14 h-14 bg-blue-50 rounded-full flex items-center justify-center animate-bell-ring">
-                        <i class="fas fa-bell text-primary-500 text-2xl"></i>
-                    </div>
+                <div class="flex items-center gap-2 text-xs text-gray-600">
+                    <span class="px-3 py-1 rounded-full bg-white/70 border border-primary-100 flex items-center gap-2"><i class="fas fa-shield-halved text-primary-500"></i> Secure Data</span>
+                    <span class="px-3 py-1 rounded-full bg-white/70 border border-primary-100 flex items-center gap-2"><i class="fas fa-bell text-primary-500"></i> Live Feed</span>
                 </div>
             </div>
         </div>
     </div>
     
-    <!-- Filters & Search -->
+    <!-- Filters & Search (Enhanced) -->
     <div class="w-full mt-6 px-4">
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-            <div class="flex flex-wrap justify-between items-center">
-                <div class="flex flex-wrap items-center gap-2 mb-2 md:mb-0">
-                    <button class="px-3 py-1 bg-primary-50 text-primary-700 rounded-lg text-sm font-medium border border-primary-100">All</button>
-                    <button class="px-3 py-1 text-gray-500 rounded-lg text-sm hover:bg-gray-50">Unread</button>
-                    <button class="px-3 py-1 text-gray-500 rounded-lg text-sm hover:bg-gray-50">Cases</button>
-                    <button class="px-3 py-1 text-gray-500 rounded-lg text-sm hover:bg-gray-50">Hearings</button>
+        <div class="relative bg-white max-w-7xl mx-auto rounded-2xl shadow-sm p-8 md:p-10 overflow-hidden">
+            <!-- Chips -->
+            <div class="flex flex-wrap gap-2 mb-4" id="notifChips">
+                <button type="button" data-filter="" class="s-chip active px-3 py-1.5 text-xs font-medium rounded-full bg-primary-600 text-white shadow-sm">All</button>
+                <button type="button" data-filter="unread" class="s-chip px-3 py-1.5 text-xs font-medium rounded-full bg-amber-50 text-amber-600 border border-amber-100 hover:bg-amber-100 transition">Unread</button>
+                <button type="button" data-filter="hearing" class="s-chip px-3 py-1.5 text-xs font-medium rounded-full bg-purple-50 text-purple-600 border border-purple-100 hover:bg-purple-100 transition">Hearings</button>
+                <button type="button" data-filter="complaint" class="s-chip px-3 py-1.5 text-xs font-medium rounded-full bg-cyan-50 text-cyan-600 border border-cyan-100 hover:bg-cyan-100 transition">Complaints</button>
+                <button type="button" data-filter="case" class="s-chip px-3 py-1.5 text-xs font-medium rounded-full bg-green-50 text-green-600 border border-green-100 hover:bg-green-100 transition">Cases</button>
+                <button type="button" data-filter="unverified" class="s-chip px-3 py-1.5 text-xs font-medium rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-100 transition">Unverified</button>
+                <button type="button" data-filter="assigned" class="s-chip px-3 py-1.5 text-xs font-medium rounded-full bg-sky-50 text-sky-700 border border-sky-100 hover:bg-sky-100 transition">Assigned</button>
+            </div>
+            <!-- Controls -->
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                <div class="md:col-span-5 relative">
+                    <input id="searchInput" type="text" placeholder="Search notifications..." class="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-200 bg-white/70 text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400" />
+                    <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-primary-400"></i>
                 </div>
-                
-                <div class="flex items-center gap-4">
-                    <div class="relative">
-                        <input 
-                            type="text" 
-                            placeholder="Search notifications..." 
-                            class="pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-300 w-full"
-                        >
-                        <div class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
-                            <i class="fas fa-search"></i>
-                        </div>
-                    </div>
-                    <button class="text-primary-600 hover:text-primary-700 text-sm font-medium whitespace-nowrap">
-                        <i class="fas fa-check-double mr-1"></i> Mark all as read
-                    </button>
+                <div class="md:col-span-2 relative">
+                    <select id="monthFilter" class="w-full pl-3 pr-8 py-2.5 rounded-lg border border-gray-200 bg-white/70 text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 appearance-none">
+                        <option value="">All Months</option>
+                        <?php foreach(range(1,12) as $m): $mn=date('F',mktime(0,0,0,$m,1)); $mv=str_pad((string)$m,2,'0',STR_PAD_LEFT); ?>
+                            <option value="<?= $mv ?>"><?= $mn ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <i class="fa-solid fa-caret-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-primary-400"></i>
                 </div>
+                <div class="md:col-span-2 relative">
+                    <select id="yearFilter" class="w-full pl-3 pr-8 py-2.5 rounded-lg border border-gray-200 bg-white/70 text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 appearance-none">
+                        <option value="">All Years</option>
+                        <?php $cy=date('Y'); for($y=$cy;$y>=$cy-5;$y--): ?>
+                            <option value="<?= $y ?>"><?= $y ?></option>
+                        <?php endfor; ?>
+                    </select>
+                    <i class="fa-solid fa-caret-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-primary-400"></i>
+                </div>
+                <div class="md:col-span-2 relative">
+                    <select id="sortOrder" class="w-full pl-3 pr-8 py-2.5 rounded-lg border border-gray-200 bg-white/70 text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 appearance-none">
+                        <option value="desc">Newest first</option>
+                        <option value="asc">Oldest first</option>
+                    </select>
+                    <i class="fa-solid fa-caret-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-primary-400"></i>
+                </div>
+                <div class="md:col-span-1 flex gap-2 justify-end md:justify-start">
+                    <button id="resetFilters" class="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-primary-100 bg-primary-50/60 text-primary-600 text-sm font-medium hover:bg-primary-100 transition"><i class="fa-solid fa-rotate-left"></i><span class="hidden xl:inline">Reset</span></button>
+                </div>
+            </div>
+            <div class="mt-3 text-right">
+                <button id="markAllReadBtn" class="text-primary-600 hover:text-primary-700 text-sm font-medium whitespace-nowrap">
+                    <i class="fas fa-check-double mr-1"></i> Mark all as read
+                </button>
             </div>
         </div>
     </div>
@@ -187,8 +257,8 @@ $stmt->close();
     <!-- Notifications List -->
 <div id="notification-regular">
     <div class="w-full mt-6 px-4 pb-10">
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-            <div class="divide-y divide-gray-100">
+    <div class="relative bg-white max-w-7xl mx-auto rounded-2xl shadow-sm p-8 md:p-10 overflow-hidden">
+            <div id="notificationList" class="divide-y divide-gray-100">
                 <?php if (!empty($notifications)): ?>
                     <?php foreach ($notifications as $row): ?>
                         <?php
@@ -208,15 +278,28 @@ $stmt->close();
                                     $bgColor = 'bg-yellow-100';
                                     $iconColor = 'text-yellow-600';
                                     break;
+                                case 'Complaint':
+                                    $icon = 'fa-file-lines';
+                                    $bgColor = 'bg-emerald-100';
+                                    $iconColor = 'text-emerald-600';
+                                    break;
+                                case 'Unverified':
+                                    $icon = 'fa-user-shield';
+                                    $bgColor = 'bg-rose-100';
+                                    $iconColor = 'text-rose-600';
+                                    break;
                             }
 
-                            $isUnread = $row['is_read'] == 0;
-                            $created = date("M d, Y \\a\\t h:i A", strtotime($row['created_at']));
+                            $isUnread = ((int)$row['is_read']) === 0;
+                            $createdAtRaw = $row['created_at'];
+                            $created = date("M d, Y \\a\\t h:i A", strtotime($createdAtRaw));
+                            $baseType = strtolower($row['type']);
+                            $searchStr = strtolower(($row['title'] ?? '').' '.($row['message'] ?? ''));
                         ?>
-                        <a href="view_notification.php?id=<?= $row['notification_id'] ?>" class="block">
-                       <div class="notification-card p-5 relative cursor-pointer <?= $isUnread ? 'bg-gray-50' : '' ?>" 
-     data-type="<?= strtolower($row['type']) ?>" 
-     data-unread="<?= $isUnread ? 'true' : 'false' ?>">
+                        <?php $isAssigned = (stripos(($row['title'] ?? ''), 'assigned') !== false) || (stripos(($row['message'] ?? ''), 'assigned') !== false); ?>
+                        <?php $notifId = isset($row['notification_id']) ? $row['notification_id'] : (isset($row['id']) ? $row['id'] : ''); ?>
+                        <a href="view_notification.php?id=<?= htmlspecialchars($notifId) ?>" class="s-notif-card block" data-type="<?= $baseType ?>" data-base="<?= $baseType ?>" data-unread="<?= $isUnread ? '1' : '0' ?>" data-date="<?= htmlspecialchars($createdAtRaw) ?>" data-search="<?= htmlspecialchars($searchStr) ?>" data-assigned="<?= $isAssigned ? '1' : '0' ?>">
+                       <div class="notification-card p-5 relative cursor-pointer <?= $isUnread ? 'bg-gray-50' : '' ?>">
 
                             <?php if ($isUnread): ?>
                                 <div class="unread-indicator animate-pulse-subtle"></div>
@@ -228,7 +311,12 @@ $stmt->close();
                                     </div>
                                 </div>
                                 <div class="flex-grow">
-                                    <p class="text-sm font-medium"><?= htmlspecialchars($row['title']) ?></p>
+                                    <p class="text-sm font-medium flex items-center gap-2">
+                                        <span><?= htmlspecialchars($row['title']) ?></span>
+                                        <?php if ($isAssigned): ?>
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 text-[10px] font-semibold">Assigned</span>
+                                        <?php endif; ?>
+                                    </p>
                                     <p class="text-sm text-gray-600 mt-1"><?= htmlspecialchars($row['message']) ?></p>
                                     <div class="flex justify-between items-center mt-2">
                                         <p class="text-xs text-gray-500"><?= $created ?></p>
@@ -242,9 +330,10 @@ $stmt->close();
                         </a>
                     <?php endforeach; ?>
                 <?php else: ?>
-                    <div class="p-5 text-sm text-gray-500">No notifications found.</div>
+                    <div class="p-5 text-sm text-gray-500 text-center">No notifications found.</div>
                 <?php endif; ?>
             </div>
+            <div id="noResults" class="hidden p-5 text-sm text-gray-500 text-center">No notifications match your filters.</div>
         </div>
     </div>
 </div>
@@ -289,100 +378,51 @@ $stmt->close();
     <?php include 'sidebar_lupon.php';?>
 
     <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const filterButtons = document.querySelectorAll('.px-3.py-1.rounded-lg.text-sm');
-        const searchInput = document.querySelector('input[type="text"]');
-        const notificationCards = document.querySelectorAll('.notification-card');
-        let activeFilter = 'All';
-
-        function applyFilters() {
-            const query = searchInput.value.toLowerCase();
-            let hasResults = false;
-
-            notificationCards.forEach(card => {
-                const type = card.dataset.type;
-                const isUnread = card.dataset.unread === 'true';
-                const content = card.textContent.toLowerCase();
-                let matchesFilter = false;
-
-                if (activeFilter === 'All') {
-                    matchesFilter = true;
-                } else if (activeFilter === 'Unread') {
-                    matchesFilter = isUnread;
-                } else {
-                    const normalizedFilter = activeFilter.toLowerCase().replace(/s$/, '');
-                    matchesFilter = type === normalizedFilter;
+    document.addEventListener('DOMContentLoaded',()=>{
+        const chips=document.querySelectorAll('#notifChips .s-chip');
+        const searchInput=document.getElementById('searchInput');
+        const monthFilter=document.getElementById('monthFilter');
+        const yearFilter=document.getElementById('yearFilter');
+        const sortOrder=document.getElementById('sortOrder');
+        const resetBtn=document.getElementById('resetFilters');
+        const cards=[...document.querySelectorAll('.s-notif-card')];
+        const noResults=document.getElementById('noResults');
+        const list=document.getElementById('notificationList');
+        let filterOverride='';
+        function applyFilters(){
+            const q=(searchInput.value||'').toLowerCase(); const m=monthFilter.value; const y=yearFilter.value; let shown=0;
+            cards.forEach(c=>{ const type=c.dataset.type||''; const base=c.dataset.base||''; const unread=c.dataset.unread==='1'; const dateRaw=c.dataset.date||''; const text=(c.dataset.search||'').toLowerCase(); const assigned=c.dataset.assigned==='1'; let show=true;
+                if(filterOverride){ 
+                    if(filterOverride==='unread') show=unread; 
+                    else if(filterOverride==='assigned') show=assigned; 
+                    else show = type===filterOverride || base===filterOverride; 
                 }
-
-                const matchesSearch = content.includes(query);
-
-                if (matchesSearch && matchesFilter) {
-                    card.style.display = '';
-                    hasResults = true;
-                } else {
-                    card.style.display = 'none';
-                }
-            });
-
-            const container = document.querySelector('.divide-y.divide-gray-100').parentElement;
-
-            if (!hasResults) {
-                container.classList.add('hidden');
-                document.getElementById('no-notifications').classList.remove('hidden');
-                document.getElementById('no-notifications').querySelector('h3').textContent = 'No matching notifications';
-            } else {
-                container.classList.remove('hidden');
-                document.getElementById('no-notifications').classList.add('hidden');
+                if(q) show = show && text.includes(q);
+                if((m||y) && dateRaw){ const d=new Date(dateRaw.replace(' ','T')); const M=('0'+(d.getMonth()+1)).slice(-2); const Y=d.getFullYear().toString(); if(m) show=show && M===m; if(y) show=show && Y===y; }
+                c.style.display=show?'':'none'; if(show) shown++; });
+            const visible=cards.filter(c=>c.style.display!=='none').sort((a,b)=>{ const da=new Date(a.dataset.date.replace(' ','T')); const db=new Date(b.dataset.date.replace(' ','T')); return sortOrder.value==='asc'? da-db : db-da; });
+            visible.forEach(el=> list.appendChild(el));
+            noResults.classList.toggle('hidden', shown>0);
+        }
+        chips.forEach(ch=> ch.addEventListener('click',()=>{ chips.forEach(c=>c.classList.remove('active','bg-primary-600','text-white','shadow')); ch.classList.add('active','bg-primary-600','text-white','shadow'); filterOverride=(ch.dataset.filter||''); applyFilters(); }));
+        [searchInput,monthFilter,yearFilter,sortOrder].forEach(el=> el.addEventListener('input',applyFilters));
+        monthFilter.addEventListener('change',applyFilters); yearFilter.addEventListener('change',applyFilters); sortOrder.addEventListener('change',applyFilters);
+        resetBtn.addEventListener('click',()=>{ searchInput.value=''; monthFilter.value=''; yearFilter.value=''; sortOrder.value='desc'; filterOverride=''; chips.forEach((c,i)=>{ c.classList.remove('active','bg-primary-600','text-white','shadow'); if(i===0){ c.classList.add('active','bg-primary-600','text-white','shadow'); } }); applyFilters(); });
+        // Mark all read
+        const markAll=document.getElementById('markAllReadBtn');
+        if(markAll){ markAll.addEventListener('click', async ()=>{ try{
+            const res = await fetch('../controllers/mark_all_notifications_read.php', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({scope:'lupon'})});
+            const data = await res.json();
+            if(data && data.success){
+                document.querySelectorAll('.unread-indicator').forEach(ind=>{ ind.classList.add('opacity-0'); setTimeout(()=> ind.remove(),250); });
+                cards.forEach(c=>{ c.dataset.unread='0'; });
             }
-
-            document.querySelector('.mt-6.flex.justify-center').classList.toggle('hidden', activeFilter !== 'All');
-        }
-
-        filterButtons.forEach(button => {
-            button.addEventListener('click', function() {
-                filterButtons.forEach(btn => {
-                    btn.classList.remove('bg-primary-50', 'text-primary-700', 'border', 'border-primary-100');
-                    btn.classList.add('text-gray-500');
-                });
-                this.classList.remove('text-gray-500');
-                this.classList.add('bg-primary-50', 'text-primary-700', 'border', 'border-primary-100');
-
-                activeFilter = this.textContent.trim();
-                applyFilters();
-            });
-        });
-
-        searchInput.addEventListener('input', function() {
-            applyFilters();
-        });
-
+        }catch(e){ console.warn('Failed to mark all as read on server:', e); } }); }
         applyFilters();
-
-        // Mark all as read functionality
-        const markAllButton = document.querySelector('button:has(.fa-check-double)');
-        markAllButton.addEventListener('click', function() {
-            document.querySelectorAll('.unread-indicator').forEach(indicator => {
-                indicator.classList.add('opacity-0');
-                setTimeout(() => {
-                    indicator.remove();
-                }, 300);
-            });
-        });
-
         // Mobile menu toggle
-        const menuButton = document.getElementById('mobile-menu-button');
-        const mobileMenu = document.getElementById('mobile-menu');
-
-        if (menuButton && mobileMenu) {
-            menuButton.addEventListener('click', function() {
-                this.classList.toggle('active');
-                if (mobileMenu.style.transform === 'translateY(0%)') {
-                    mobileMenu.style.transform = 'translateY(-100%)';
-                } else {
-                    mobileMenu.style.transform = 'translateY(0%)';
-                }
-            });
-        }
+        const menuButton=document.getElementById('mobile-menu-button');
+        const mobileMenu=document.getElementById('mobile-menu');
+        if(menuButton && mobileMenu){ menuButton.addEventListener('click',function(){ this.classList.toggle('active'); mobileMenu.style.transform=(mobileMenu.style.transform==='translateY(0%)')? 'translateY(-100%)':'translateY(0%)'; }); }
     });
     </script>
 </body>

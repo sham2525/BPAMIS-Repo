@@ -5,6 +5,23 @@
  */
 session_start();
 $pageTitle = "View Cases";
+// Compute case status counts for header overview
+$caseCounts = [];
+try {
+    $conn_counts = new mysqli("localhost","root","","barangay_case_management");
+    if (!$conn_counts->connect_error) {
+        $resC = $conn_counts->query("SELECT Case_Status, COUNT(*) total FROM CASE_INFO GROUP BY Case_Status");
+        if ($resC) {
+            while ($rC = $resC->fetch_assoc()) {
+                $caseCounts[$rC['Case_Status']] = (int)$rC['total'];
+            }
+        }
+        $conn_counts->close();
+    }
+} catch (Throwable $e) { /* ignore lightweight header counts errors */ }
+if (!function_exists('cc')) {
+    function cc($k,$arr){ return $arr[$k] ?? 0; }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -81,18 +98,24 @@ $pageTitle = "View Cases";
             <div class="absolute bottom-0 left-0 w-48 h-48 bg-primary-200 rounded-full -ml-16 -mb-16 opacity-60 animate-[float_7s_ease-in-out_infinite]"></div>
             <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[620px] h-[620px] bg-gradient-to-br from-primary-50 via-white to-primary-100 opacity-30 blur-3xl rounded-full pointer-events-none"></div>
             <div class="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-8">
-                <div class="max-w-2xl">
-                    <h1 class="text-3xl md:text-4xl font-light text-primary-900 tracking-tight">Manage <span class="font-semibold">Barangay Cases</span></h1>
-                    <p class="mt-4 text-gray-600 leading-relaxed">Browse, track status progression, and schedule hearings for registered complaints. Use the filters below to quickly isolate the cases you need.</p>
-                    <div class="mt-5 flex flex-wrap gap-3 text-xs text-primary-700/80 font-medium">
-                        <span class="px-3 py-1 rounded-full bg-white/70 backdrop-blur border border-primary-100 shadow-sm flex items-center gap-1"><i class="fa-solid fa-filter text-primary-500"></i> Smart Filters</span>
-                        <span class="px-3 py-1 rounded-full bg-white/70 backdrop-blur border border-primary-100 shadow-sm flex items-center gap-1"><i class="fa-solid fa-calendar-check text-primary-500"></i> Hearing Ready</span>
-                        <span class="px-3 py-1 rounded-full bg-white/70 backdrop-blur border border-primary-100 shadow-sm flex items-center gap-1"><i class="fa-solid fa-chart-line text-primary-500"></i> Status Insights</span>
-                    </div>
+            <div class="max-w-2xl">
+                <h1 class="text-3xl md:text-4xl font-light text-primary-900 tracking-tight">Manage <span class="font-semibold">Barangay Cases</span></h1>
+                <p class="mt-4 text-gray-600 leading-relaxed">Browse, review details, and monitor resolution progress. Use the smart filters below to quickly narrow results.</p>
+                <div class="mt-5 flex flex-wrap gap-3 text-xs text-primary-700/80 font-medium">
+                    <span class="px-3 py-1.5 rounded-full bg-white/70 backdrop-blur border border-primary-100 shadow-sm flex items-center gap-1"><i class="fa-solid fa-filter text-primary-500"></i> Smart Filters</span>
+                    <span class="px-3 py-1.5 rounded-full bg-white/70 backdrop-blur border border-primary-100 shadow-sm flex items-center gap-1"><i class="fa-solid fa-chart-line text-primary-500"></i> Status Insights</span>
+                    <span class="px-3 py-1.5 rounded-full bg-white/70 backdrop-blur border border-primary-100 shadow-sm flex items-center gap-1"><i class="fa-solid fa-clock-rotate-left text-primary-500"></i> Recent Focus</span>
                 </div>
-                <div class="hidden md:block">
-                    <img src="../Assets/Img/court.svg" alt="Cases Illustration" class="h-44 w-auto drop-shadow-sm" onerror="this.style.display='none'">
+            </div>
+            <div class="hidden md:flex flex-col gap-3 min-w-[250px]">
+                <div class="grid grid-cols-3 gap-2">
+                    <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-primary-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-primary-500 font-semibold">Open</span><span class="mt-1 text-lg font-semibold text-primary-700"><?= cc('Open',$caseCounts) ?></span></div>
+                    <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-blue-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-blue-600 font-semibold">Pending Hearing</span><span class="mt-1 text-lg font-semibold text-blue-700"><?= cc('Pending Hearing',$caseCounts) ?></span></div>
+                    <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-rose-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-rose-600 font-semibold">Mediation</span><span class="mt-1 text-lg font-semibold text-rose-700"><?= cc('Mediation',$caseCounts) ?></span></div>
+                    <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-green-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-green-600 font-semibold">Resolved</span><span class="mt-1 text-lg font-semibold text-green-700"><?= cc('Resolved',$caseCounts) ?></span></div>
+                    <div class="flex flex-col items-center bg-white/80 backdrop-blur rounded-xl px-3 py-3 border border-gray-100 shadow-sm"><span class="text-[10px] uppercase tracking-wide text-gray-600 font-semibold">Closed</span><span class="mt-1 text-lg font-semibold text-gray-700"><?= cc('Closed',$caseCounts) ?></span></div>
                 </div>
+                <div class="text-[11px] text-primary-700/70 text-center">Status overview</div>
             </div>
         </div>
     </div>
@@ -115,38 +138,8 @@ $pageTitle = "View Cases";
                             <span class="absolute inset-0 rounded-xl ring-1 ring-inset ring-white/20"></span>
                         </a>
                     </div>
-                    <?php
-                        // Lightweight status counts (separate from main query)
-                        $counts = [ 'Open'=>0, 'Pending Hearing'=>0, 'Mediation'=>0, 'Resolved'=>0, 'Closed'=>0 ];
-                        $conn_counts = new mysqli("localhost","root","","barangay_case_management");
-                        if(!$conn_counts->connect_error){
-                            $resC = $conn_counts->query("SELECT Case_Status, COUNT(*) total FROM CASE_INFO GROUP BY Case_Status");
-                            if($resC){ while($rC = $resC->fetch_assoc()){ $statusKey = $rC['Case_Status']; if(isset($counts[$statusKey])) $counts[$statusKey] = (int)$rC['total']; }}
-                            $conn_counts->close();
-                        }
-                    ?>
-                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-[11px] font-semibold">
-                        <div class="flex flex-col items-center gap-1 px-3 py-3 rounded-xl bg-white/70 backdrop-blur border border-primary-100 shadow-sm">
-                            <span class="uppercase tracking-wide text-primary-500">Open</span>
-                            <span class="text-primary-800 text-base"><?= $counts['Open'] ?></span>
-                        </div>
-                        <div class="flex flex-col items-center gap-1 px-3 py-3 rounded-xl bg-white/70 backdrop-blur border border-amber-100 shadow-sm">
-                            <span class="uppercase tracking-wide text-amber-600">Pending Hearing</span>
-                            <span class="text-amber-700 text-base"><?= $counts['Pending Hearing'] ?></span>
-                        </div>
-                        <div class="flex flex-col items-center gap-1 px-3 py-3 rounded-xl bg-white/70 backdrop-blur border border-purple-100 shadow-sm">
-                            <span class="uppercase tracking-wide text-purple-600">Mediation</span>
-                            <span class="text-purple-700 text-base"><?= $counts['Mediation'] ?></span>
-                        </div>
-                        <div class="flex flex-col items-center gap-1 px-3 py-3 rounded-xl bg-white/70 backdrop-blur border border-green-100 shadow-sm">
-                            <span class="uppercase tracking-wide text-green-600">Resolved</span>
-                            <span class="text-green-700 text-base"><?= $counts['Resolved'] ?></span>
-                        </div>
-                        <div class="flex flex-col items-center gap-1 px-3 py-3 rounded-xl bg-white/70 backdrop-blur border border-gray-200 shadow-sm">
-                            <span class="uppercase tracking-wide text-gray-500">Closed</span>
-                            <span class="text-gray-700 text-base"><?= $counts['Closed'] ?></span>
-                        </div>
-                    </div>
+                    
+                    
                     <div class="flex flex-wrap gap-2 pt-1">
                         <button type="button" data-status="" class="status-chip active px-3 py-1.5 text-xs font-medium rounded-full bg-primary-600 text-white shadow-sm transition hover:shadow">All</button>
                         <button type="button" data-status="Open" class="status-chip px-3 py-1.5 text-xs font-medium rounded-full bg-primary-50 text-primary-600 border border-primary-100 hover:bg-primary-100 transition">Open</button>
@@ -157,23 +150,11 @@ $pageTitle = "View Cases";
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
                         <!-- Search -->
-                        <div class="md:col-span-5 relative group">
-                            <input type="text" id="searchInput" placeholder="Search by case ID, complainant, respondent or title..." class="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200/80 bg-white/70 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 placeholder:text-gray-400 text-sm transition" />
+                        <div class="md:col-span-7 relative group">
+                            <input type="text" id="searchInput" placeholder="Search by case ID, complainant, respondent or type..." class="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200/80 bg-white/70 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 placeholder:text-gray-400 text-sm transition" />
                             <i class="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-primary-400 group-focus-within:text-primary-500 transition"></i>
                         </div>
-                        <!-- Status -->
-                        <div class="md:col-span-2 relative">
-                            <select id="statusFilter" class="w-full pl-3 pr-8 py-3 rounded-xl border border-gray-200 bg-white/70 text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 appearance-none">
-                                <option value="">All Statuses</option>
-                                <option value="Open">Open</option>
-                                <option value="Mediation">Mediation</option>
-                                <option value="Resolution">Resolution</option>
-                                <option value="Settlement">Settlement</option>
-                                <option value="Resolved">Resolved</option>
-                                <option value="Closed">Closed</option>
-                            </select>
-                            <i class="fa-solid fa-caret-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-primary-400"></i>
-                        </div>
+                        
                         <!-- Month -->
                         <div class="md:col-span-2 relative">
                             <select id="monthFilter" class="w-full pl-3 pr-8 py-3 rounded-xl border border-gray-200 bg-white/70 text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 appearance-none">
@@ -237,6 +218,7 @@ $sql = "SELECT
     cs.Case_Status,
     ci.Complaint_ID,
     ci.Complaint_Title,
+    ci.case_type,
     ci.Date_Filed,
     COALESCE(res_com.First_Name, ext_com.First_Name) AS Complainant_First,
     COALESCE(res_com.Last_Name, ext_com.Last_Name) AS Complainant_Last
@@ -280,7 +262,21 @@ $respondents_display = !empty($respondent_names) ? implode(', ', $respondent_nam
 ?>
 <tr class="border-b border-gray-100 hover:bg-primary-50/40 transition">
     <td class="p-3 text-sm text-gray-700 font-mono text-[11px] tracking-wide"><?= htmlspecialchars($case['Case_ID']) ?></td>
-    <td class="p-3 text-sm text-gray-700"><?= htmlspecialchars($case['Complaint_Title']) ?></td>
+    <td class="p-3 text-sm text-gray-700">
+        <?php
+            $rawType = isset($case['case_type']) ? trim(strtolower($case['case_type'])) : '';
+            if ($rawType === 'civil') $rawType = 'civil case';
+            if ($rawType === 'criminal') $rawType = 'criminal case';
+            $label = 'Not set';
+            $badgeClass = 'text-gray-700 bg-gray-50 border-gray-200';
+            if ($rawType === 'civil case') { $label = 'Civil Case'; $badgeClass = 'text-sky-700 bg-sky-50 border-sky-200'; }
+            elseif ($rawType === 'criminal case') { $label = 'Criminal Case'; $badgeClass = 'text-rose-700 bg-rose-50 border-rose-200'; }
+            elseif ($rawType === 'blotter') { $label = 'Blotter'; $badgeClass = 'text-slate-700 bg-slate-50 border-slate-200'; }
+        ?>
+        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] border font-semibold <?= $badgeClass ?>">
+            <i class="fa-solid fa-tag"></i> <?= htmlspecialchars($label) ?>
+        </span>
+    </td>
     <td class="p-3 text-sm text-gray-700"><?= htmlspecialchars($case['Complainant_First'] . ' ' . $case['Complainant_Last']) ?></td>
     <td class="p-3 text-sm text-gray-700"><?= htmlspecialchars($respondents_display) ?></td>
     <td class="p-3 text-sm text-gray-700"><?= htmlspecialchars($case['Date_Filed']) ?></td>
@@ -337,7 +333,6 @@ endif;
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const searchInput = document.getElementById('searchInput');
-            const statusFilter = document.getElementById('statusFilter');
             const monthFilter = document.getElementById('monthFilter');
             const yearFilter = document.getElementById('yearFilter');
             const resetBtn = document.getElementById('resetFilters');
@@ -349,7 +344,7 @@ endif;
 
             function filterTable() {
                 const searchQuery = searchInput.value.toLowerCase();
-                const statusQuery = (chipStatusOverride || statusFilter.value).toLowerCase();
+                const statusQuery = (chipStatusOverride || '').toLowerCase();
                 const selectedMonth = monthFilter.value;
                 const selectedYear = yearFilter.value;
                 let shown = 0;
@@ -382,14 +377,13 @@ endif;
 
             function resetFilters() {
                 searchInput.value = '';
-                statusFilter.value = '';
                 monthFilter.value = '';
                 yearFilter.value = '';
+                chipStatusOverride = '';
                 filterTable();
             }
 
             searchInput.addEventListener('input', filterTable);
-            statusFilter.addEventListener('change', filterTable);
             monthFilter.addEventListener('change', filterTable);
             yearFilter.addEventListener('change', filterTable);
             resetBtn.addEventListener('click', resetFilters);
@@ -401,8 +395,6 @@ endif;
                     chipStatusOverride = chip.dataset.status || '';
                     // Re-style active chip
                     chip.classList.add('active','bg-primary-600','text-white','shadow');
-                    // Reset native select to match chip selection
-                    statusFilter.value = chipStatusOverride;
                     filterTable();
                 });
             });

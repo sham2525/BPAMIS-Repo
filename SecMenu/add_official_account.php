@@ -1,4 +1,6 @@
 <?php
+// Ensure DB connection and session are initialized before any output
+require_once(__DIR__ . '/../server/server.php');
 // --- CAPTCHA VERIFICATION FUNCTION ---
 function verify_captcha($captcha_response)
 {

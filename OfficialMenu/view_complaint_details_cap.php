@@ -76,14 +76,14 @@ $respondent_names = !empty($respondents) ? implode(', ', $respondents) : 'N/A';
         <div class="absolute -top-32 -left-24 w-96 h-96 bg-primary-200 opacity-30 rounded-full blur-3xl"></div>
         <div class="absolute top-1/2 -right-24 w-[30rem] h-[30rem] bg-primary-300 opacity-20 rounded-full blur-3xl"></div>
     </div>
-    <?php include '../includes/barangay_official_lupon_nav.php'; ?>
+    <?php include '../includes/barangay_official_cap_nav.php'; ?>
     <?php include 'sidebar_lupon.php'; ?>
     <?php $status=strtoupper(trim($complaint['Status'])); $statusStyles=['PENDING'=>'bg-amber-50 text-amber-600 border border-amber-200','IN CASE'=>'bg-sky-50 text-sky-600 border border-sky-200','REJECTED'=>'bg-rose-50 text-rose-600 border border-rose-200','RESOLVED'=>'bg-emerald-50 text-emerald-600 border border-emerald-200']; $statusClass=$statusStyles[$status]??'bg-gray-100 text-gray-600 border border-gray-200'; ?>
     <main class="relative z-10 max-w-5xl mx-auto px-4 md:px-8 pt-10 pb-24 animate-fade-in">
         <div class="mb-8 flex items-center gap-3">
-            <a href="assigned_case.php" class="group inline-flex items-center text-sm font-medium text-primary-700 hover:text-primary-900 transition">
+            <a href="view_complaints.php" class="group inline-flex items-center text-sm font-medium text-primary-700 hover:text-primary-900 transition">
                 <span class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-white/70 shadow ring-1 ring-primary-100 group-hover:bg-primary-50"><i class="fa fa-arrow-left"></i></span>
-                <span class="ml-2">Back to Assigned Cases</span>
+                <span class="ml-2">Back to Complaint Lists</span>
             </a>
         </div>
         <section class="relative glass shadow-glow rounded-2xl p-6 md:p-10 border border-white/60 ring-1 ring-primary-100/40 overflow-hidden">
@@ -133,7 +133,7 @@ $respondent_names = !empty($respondents) ? implode(', ', $respondents) : 'N/A';
                     </div>
                 </div>
                 <div class="pt-2 flex">
-                    <a href="assigned_case.php" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/80 hover:bg-white text-primary-700 border border-primary-200 shadow-sm text-sm font-medium transition"><i class="fa fa-arrow-left"></i> Back to Assigned Cases</a>
+                    <a href="view_complaints.php" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/80 hover:bg-white text-primary-700 border border-primary-200 shadow-sm text-sm font-medium transition"><i class="fa fa-arrow-left"></i> Back to Complaint Lists</a>
                 </div>
             </div>
         </section>

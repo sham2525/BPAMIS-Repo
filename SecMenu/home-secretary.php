@@ -1,7 +1,9 @@
 <?php
 // Secretary Home (Premium Glass UI)
 include '../server/server.php';
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // ===================== NUMERIC AGGREGATES ===================== //
 $complaintsCount = $resolvedCount = $pendingCount = $rejectedCount = 0;

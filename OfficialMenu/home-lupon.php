@@ -1,5 +1,7 @@
 <?php
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 include '../server/server.php';
 
@@ -47,6 +49,14 @@ $result = $conn->query($hearingQuery);
 if ($result && $row = $result->fetch_assoc()) {
     $scheduledHearings = (int)$row['count'];
 }
+
+// Progress percentages (guard division by zero)
+$complaintResolvedPercent = $complaintsCount ? round(($resolvedCount / $complaintsCount) * 100) : 0;
+$complaintPendingPercent = $complaintsCount ? round(($pendingCount / $complaintsCount) * 100) : 0;
+$complaintRejectedPercent = $complaintsCount ? round(($rejectedCount / $complaintsCount) * 100) : 0;
+$caseResolvedPercent = $casesCount ? round(($resolvedCaseCount / $casesCount) * 100) : 0;
+// Approximate hearing progress relative to open cases
+$hearingPercent = $casesCount ? min(100, round(($scheduledHearings / max($casesCount, 1)) * 100)) : 0;
 
 // ========== RECENT ACTIVITY ==========
 function getComplainantName($conn, $resident_id, $external_id) {
@@ -166,504 +176,248 @@ for ($i = 5; $i >= 0; $i--) {
             }
         }
     </script>
-     <style>        .gradient-bg {
-            background: linear-gradient(to right, #f0f7ff, #e0effe);
+    <style>
+        body {
+            background: radial-gradient(circle at 20% 20%, #e0f2ff 0%, #f5f9ff 50%, #ffffff 100%);
         }
-        .card-hover {
-            transition: all 0.3s ease;
-        }
-        .card-hover:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
-        }
-        .progress-bar {
-            transition: width 1s ease-in-out;
-        }
-        .stat-card {
-            border-radius: 12px;
-            overflow: hidden;
-        }       
-        
-        /* Modern Calendar Styles */
-        .calendar-container {
-            --fc-border-color: #f0f0f0;
-            --fc-daygrid-event-dot-width: 6px;
-            --fc-event-border-radius: 6px;
-            --fc-small-font-size: 0.75rem;
-        }
-        
-        .calendar-container .fc-theme-standard th {
-            padding: 12px 0;
-            font-weight: 500;
-            text-transform: uppercase;
-            font-size: 0.75rem;
-            letter-spacing: 1px;
-            color: #6b7280;
-            border: none;
-        }
-        
-        .calendar-container .fc-theme-standard td {
-            border-color: #f5f5f5;
-        }
-        
-        .calendar-container .fc-col-header-cell {
-            background: transparent;
-        }
-        
-        .calendar-container .fc-toolbar-title {
-            font-weight: 500;
-            font-size: 1.1rem;
-        }
-        
-        .calendar-container .fc-button {
-            box-shadow: none !important;
-            padding: 0.5rem 0.75rem;
-            border-radius: 6px !important;
-            font-weight: 500;
-            transition: all 0.2s ease;
-            text-transform: capitalize;
-            border: 1px solid #e5e7eb !important;
-        }
-        
-        .calendar-container .fc-button-primary {
-            background-color: white !important;
-            color: #4b5563 !important;
-        }
-        
+
+        .orb { position: absolute; border-radius: 50%; filter: blur(40px); opacity: .55; mix-blend-mode: multiply; }
+        .orb.one { width: 480px; height: 480px; background: linear-gradient(135deg, #0c9ced, #7cccfd); top: -140px; right: -120px; animation: float 14s ease-in-out infinite; }
+        .orb.two { width: 360px; height: 360px; background: linear-gradient(135deg, #bae2fd, #e0effe); bottom: -120px; left: -100px; animation: float 11s ease-in-out reverse infinite; }
+
+        .glass { backdrop-filter: blur(14px); background: linear-gradient(135deg, rgba(255, 255, 255, .65), rgba(255, 255, 255, .35)); border: 1px solid rgba(255, 255, 255, .45); box-shadow: 0 10px 40px -12px rgba(12, 156, 237, .25), 0 4px 18px -6px rgba(12, 156, 237, .18); }
+
+        .stat-chip { display:inline-flex; align-items:center; font-size:.75rem; font-weight:600; padding:.25rem .5rem; border-radius:.5rem; background:rgba(255,255,255,.6); backdrop-filter:blur(4px); border:1px solid rgba(255,255,255,.4); box-shadow:0 1px 2px rgba(0,0,0,.05); }
+
+        .progress-wrap { height: 12px; }
+        .progress-bar { transition: width 1s cubic-bezier(.4, .0, .2, 1); box-shadow: 0 0 0 1px rgba(255,255,255,.4), 0 2px 6px -1px rgba(12,156,237,.25); }
+
+        .section-label { font-size: .65rem; letter-spacing: .09em; font-weight: 600; text-transform: uppercase; color: #0369a1; }
+        .quick-btn { position: relative; overflow: hidden; transition: transform .2s ease; }
+        .quick-btn:before { content:""; position:absolute; inset:0; background: linear-gradient(120deg, rgba(255,255,255,.6), rgba(255,255,255,0)); opacity:0; transition: opacity .4s; }
+        .quick-btn:hover:before { opacity:1; }
+        .quick-btn:hover { transform: translateY(-4px); }
+        .fade-in { animation: fade .6s ease; }
+        @keyframes fade { from { opacity:0; transform: translateY(8px);} to{ opacity:1; transform:none;} }
+
+        /* Loader */
+        .loader-wrapper { position: fixed; inset: 0; background: #fff; display:flex; justify-content:center; align-items:center; z-index: 50; transition: opacity .6s; }
+        .loader { position: relative; width: 120px; height: 120px; }
+        .loader-gradient { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(#60a5fa 0deg, rgba(37,100,235,.66) 120deg, rgba(30,64,175,.34) 240deg, #60a5fa 360deg); animation: spin 1.2s linear infinite; }
+        .loader-inner { position: absolute; inset: 10px; background: rgba(255, 255, 255, .85); border-radius: 50%; }
+        .loader-logo { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 58px; }
+        @keyframes spin { to { transform: rotate(360deg);} }
+        .fade-out { opacity: 0; pointer-events: none; }
+
+        /* Calendar refine */
+        .calendar-container { --fc-border-color: transparent; }
+        .calendar-container .fc-theme-standard th { border:none; font-size:.65rem; letter-spacing:.08em; text-transform:uppercase; color:#0c4a6e; background:transparent; }
+        .calendar-container .fc-daygrid-day { background: rgba(255,255,255,.55); backdrop-filter: blur(6px); }
     </style>
 </head>
-<body class="bg-gray-50 font-sans">
-    <?php include '../includes/barangay_official_lupon_nav.php'; ?>
-    
-    <!-- Welcome Banner -->
-    <section class="container mx-auto mt-10 px-4">
-        <div class="gradient-bg rounded-2xl shadow-sm p-8 md:p-12 relative overflow-hidden">
-            <div class="absolute top-0 right-0 w-64 h-64 bg-primary-100 rounded-full -mr-20 -mt-20 opacity-70"></div>
-            <div class="absolute bottom-0 left-0 w-40 h-40 bg-primary-200 rounded-full -ml-10 -mb-10 opacity-60"></div>
-            <div class="relative z-10">
-                <h2 class="text-3xl font-light text-primary-800">Welcome, <span class="font-medium">Barangay Official - Lupon Tagapamayapa</span></h2>
-                <p class="mt-3 text-gray-600 max-w-md">Manage conciliation process, write feedback and oversee the Barangay Panducot Adjudication System with these powerful tools.</p>
-            </div>
+<body class="font-sans text-gray-700 relative overflow-x-hidden">
+    <div class="orb one"></div>
+    <div class="orb two"></div>
+
+    <!-- Loader -->
+    <div class="loader-wrapper" id="page-loader">
+        <div class="loader">
+            <div class="loader-gradient"></div>
+            <div class="loader-inner"></div>
+            <img src="../Assets/Img/logo.png" alt="BPAMIS Logo" class="loader-logo">
         </div>
-    </section>
-    
-    <!-- Quick Actions -->
-    <div class="container mx-auto mt-8 px-4">
-        <h3 class="text-lg font-medium text-gray-700 mb-4 px-2">Quick Actions</h3>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <a href="feedback_lupon.php" class="card-hover flex items-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
-                <div class="bg-blue-50 p-3 rounded-lg mr-4">
-                    <i class="fas fa-plus-circle text-primary-600 text-lg"></i>
+    </div>
+
+    <?php include '../includes/barangay_official_lupon_nav.php'; ?>
+
+    <!-- HEADER / INTRO -->
+    <div class="max-w-7xl mx-auto px-5 pt-10 relative">
+        <div class="glass rounded-3xl p-8 md:p-12 overflow-hidden fade-in">
+            <div class="absolute inset-0 pointer-events-none">
+                <div class="absolute -top-20 -right-10 w-80 h-80 bg-gradient-to-br from-primary-200/70 to-primary-400/40 rounded-full blur-3xl opacity-60"></div>
+                <div class="absolute -bottom-24 -left-10 w-72 h-72 bg-gradient-to-tr from-primary-100/60 via-white/40 to-primary-300/40 rounded-full blur-3xl"></div>
+            </div>
+            <div class="relative z-10">
+                <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+                    <div>
+                        <p class="section-label mb-2">Lupon Dashboard</p>
+                        <h1 class="text-3xl md:text-4xl font-semibold tracking-tight text-sky-900">Welcome back<span class="font-light">,</span></h1>
+                        <p class="mt-2 text-sky-800 text-lg font-medium">
+                            <?= isset($_SESSION['official_name']) ? htmlspecialchars($_SESSION['official_name']) : 'Lupon Tagapamayapa' ?>
+                        </p>
+                        <p class="mt-3 max-w-xl text-sm md:text-base text-sky-700/80">Manage conciliation, assigned cases, and hearings efficiently with real‑time insights.</p>
+                    </div>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4 w-full md:w-auto">
+                        <a href="feedback_lupon.php" class="quick-btn glass group rounded-xl px-4 py-3 flex flex-col items-start gap-1 hover:shadow-lg">
+                            <div class="flex items-center gap-2 text-sky-700"><i class="fa-solid fa-square-plus text-sky-600"></i><span class="text-xs font-semibold tracking-wide uppercase">New</span></div>
+                            <span class="text-[13px] font-medium text-sky-900">Feedback</span>
+                        </a>
+                        <a href="assigned_case.php" class="quick-btn glass group rounded-xl px-4 py-3 flex flex-col items-start gap-1">
+                            <div class="flex items-center gap-2 text-emerald-700"><i class="fa-solid fa-user-check text-emerald-600"></i><span class="text-xs font-semibold tracking-wide uppercase">View</span></div>
+                            <span class="text-[13px] font-medium text-emerald-900">Assigned Cases</span>
+                        </a>
+                        <a href="view_hearing_calendar_lupon.php" class="quick-btn glass group rounded-xl px-4 py-3 flex flex-col items-start gap-1">
+                            <div class="flex items-center gap-2 text-rose-700"><i class="fa-solid fa-calendar-days text-rose-600"></i><span class="text-xs font-semibold tracking-wide uppercase">View</span></div>
+                            <span class="text-[13px] font-medium text-rose-900">Hearings</span>
+                        </a>
+                    </div>
                 </div>
-                <div>
-                    <h4 class="font-medium text-gray-800">Write Feedback</h4>
-                    <p class="text-sm text-gray-500">Create a Feedback</p>
-                </div>
-            </a>
-            <a href="view_assigned_cases.php" class="card-hover flex items-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
-                <div class="bg-yellow-50 p-3 rounded-lg mr-4">
-                    <i class="fas fa-gavel text-yellow-600 text-lg"></i>
-                </div>
-                <div>
-                    <h4 class="font-medium text-gray-800">View Cases Assigned</h4>
-                    <p class="text-sm text-gray-500">Monitor active cases</p>
-                </div>
-            </a>
-            <a href="view_hearing_calendar.php" class="card-hover flex items-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
-                <div class="bg-green-50 p-3 rounded-lg mr-4">
-                    <i class="fas fa-calendar-alt text-green-600 text-lg"></i>
-                </div>
-                <div>
-                    <h4 class="font-medium text-gray-800">View Hearing</h4>
-                    <p class="text-sm text-gray-500">View hearings</p>
-                </div>
-            </a>
+            </div>
         </div>
     </div>
     
-    <!-- Dashboard Content -->
-    <div class="container mx-auto mt-10 px-4 pb-10">        <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
-            <!-- Statistics Section -->
-            <div class="md:col-span-5 bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-                <h2 class="text-lg font-medium text-gray-800 mb-5 flex items-center">
-                    <i class="fas fa-chart-bar text-primary-500 mr-2"></i>
-                    Statistics
-                </h2>
-                
-                <div class="space-y-6">
-                    <div class="flex flex-col">
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="text-sm text-gray-600">Total Complaints</span>
-                            <span id="complaints-count" class="text-sm font-medium text-primary-600 bg-primary-50 px-2 py-0.5 rounded">0</span>
-                        </div>
-                        <div class="w-full bg-gray-100 rounded-full h-2">
-                            <div id="complaints-progress" class="progress-bar bg-primary-400 h-2 rounded-full"></div>
-                        </div>
-                    </div>
-                    
-                    <div class="flex flex-col">
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="text-sm text-gray-600">Total Cases</span>
-                            <span id="cases-count" class="text-sm font-medium text-primary-600 bg-primary-50 px-2 py-0.5 rounded">0</span>
-                        </div>
-                        <div class="w-full bg-gray-100 rounded-full h-2">
-                            <div id="cases-progress" class="progress-bar bg-green-400 h-2 rounded-full"></div>
-                        </div>
-                    </div>
-                    
-                    <div class="flex flex-col">
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="text-sm text-gray-600">Scheduled Hearings</span>
-                            <span id="hearings-count" class="text-sm font-medium text-primary-600 bg-primary-50 px-2 py-0.5 rounded">0</span>
-                        </div>
-                        <div class="w-full bg-gray-100 rounded-full h-2">
-                            <div id="hearings-progress" class="progress-bar bg-blue-400 h-2 rounded-full"></div>
-                        </div>
-                    </div>
-                    
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="bg-green-50 rounded-lg p-4 flex items-center">
-                            <i class="fas fa-check-circle text-green-500 text-xl mr-3"></i>
-                            <div>
-                                <p class="text-xs text-gray-500">Resolved Cases</p>
-                                <p id="resolved-count" class="text-lg font-medium text-green-600">0</p>
-                            </div>
-                        </div>
-                        
-                        <div class="bg-yellow-50 rounded-lg p-4 flex items-center">
-                            <i class="fas fa-hourglass-half text-yellow-500 text-xl mr-3"></i>
-                            <div>
-                                <p class="text-xs text-gray-500">Pending Cases</p>
-                                <p id="pending-count" class="text-lg font-medium text-yellow-600">0</p>
-                            </div>
-                        </div>
-                          <div class="bg-purple-50 rounded-lg p-4 flex items-center">
-                            <i class="fas fa-handshake text-purple-500 text-xl mr-3"></i>
-                            <div>
-                                <p class="text-xs text-gray-500">Mediated Disputes</p>
-                                <p id="mediated-count" class="text-lg font-medium text-purple-600">0</p>
-                            </div>
-                        </div>
-                        
-                        <div class="bg-red-50 rounded-lg p-4 flex items-center">
-                            <i class="fas fa-ban text-red-500 text-xl mr-3"></i>
-                            <div>
-                                <p class="text-xs text-gray-500">Rejected Cases</p>
-                                <p id="rejected-count" class="text-lg font-medium text-red-600">0</p>
-                            </div>
-                        </div>
+    <!-- MAIN GRID -->
+    <div class="max-w-7xl mx-auto px-5 mt-10 pb-16 space-y-10">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+            <!-- Left: Upcoming Hearings (wider) -->
+            <div class="lg:col-span-8 w-full order-1">
+                <div class="glass rounded-2xl p-6 md:p-7 fade-in h-full flex flex-col min-h-[520px] md:min-h-[600px]">
+                    <div class="flex items-center gap-2 mb-5"><i class="fas fa-calendar text-primary-500"></i><h2 class="text-sky-900 font-semibold tracking-tight">Upcoming Hearings</h2></div>
+                    <div class="mt-2 flex-1 min-h-[460px] md:min-h-[540px]">
+                        <iframe src="../SecMenu/schedule/CalendarLupon.php" class="w-full h-full rounded-xl border border-white/40 shadow-sm" style="background: transparent;" loading="lazy"></iframe>
                     </div>
                 </div>
             </div>
-            
-            <!-- Calendar Section -->
-            <div class="md:col-span-7 bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-                <h2 class="text-lg font-medium text-gray-800 mb-5 flex items-center">
-                    <i class="fas fa-calendar text-primary-500 mr-2"></i>
-                    Upcoming Hearings
-                </h2>
-                <div id='calendar' class="calendar-container mt-2"></div>
+            <!-- Right: Statistics (narrower) -->
+            <div class="lg:col-span-4 w-full order-2">
+                <div class="glass rounded-2xl p-6 md:p-7 fade-in h-full flex flex-col min-h-[520px] md:min-h-[600px]">
+                    <div class="flex items-center gap-2 mb-5">
+                        <i class="fa-solid fa-chart-simple text-sky-600"></i>
+                        <h2 class="text-sky-900 font-semibold tracking-tight">Statistics</h2>
+                    </div>
+                    <div class="space-y-6 flex-1">
+                        <!-- Complaints -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-xs font-semibold text-sky-800 tracking-wide">Total Complaints</span>
+                                <span class="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-sky-100 text-sky-700"><?= $complaintsCount ?></span>
+                            </div>
+                            <div class="space-y-2">
+                                <div>
+                                    <div class="flex justify-between text-[10px] font-medium text-emerald-700 mb-0.5"><span>Resolved</span><span><?= $resolvedCount ?></span></div>
+                                    <div class="w-full h-2.5 rounded-full bg-emerald-50 overflow-hidden"><div class="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 progress-bar" style="width: <?= $complaintResolvedPercent ?>%"></div></div>
+                                </div>
+                                <div>
+                                    <div class="flex justify-between text-[10px] font-medium text-amber-700 mb-0.5"><span>Pending</span><span><?= $pendingCount ?></span></div>
+                                    <div class="w-full h-2.5 rounded-full bg-amber-50 overflow-hidden"><div class="h-full bg-gradient-to-r from-amber-400 to-amber-500 progress-bar" style="width: <?= $complaintPendingPercent ?>%"></div></div>
+                                </div>
+                                <div>
+                                    <div class="flex justify-between text-[10px] font-medium text-rose-700 mb-0.5"><span>Rejected</span><span><?= $rejectedCount ?></span></div>
+                                    <div class="w-full h-2.5 rounded-full bg-rose-50 overflow-hidden"><div class="h-full bg-gradient-to-r from-rose-400 to-rose-500 progress-bar" style="width: <?= $complaintRejectedPercent ?>%"></div></div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Cases -->
+                        <div>
+                            <div class="flex justify-between mb-1.5 text-xs font-medium text-emerald-800"><span>Total Cases</span><span class="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700"><?= $casesCount ?></span></div>
+                            <div class="w-full bg-white/60 rounded-full progress-wrap overflow-hidden"><div class="progress-bar bg-gradient-to-r from-emerald-400 to-emerald-500 h-full" style="width: <?= $caseResolvedPercent ?>%"></div></div>
+                            <p class="text-[10px] mt-1 text-emerald-800/70">Mediation: <?= $mediatedCount ?> • Resolution: <?= $resolutionCount ?> • Settlement: <?= $settlementCount ?> • Closed: <?= $closedCount ?> • Resolved: <?= $resolvedCaseCount ?></p>
+                        </div>
+                        <!-- Hearings -->
+                        <div>
+                            <div class="flex justify-between mb-1.5 text-xs font-medium text-rose-800"><span>Scheduled Hearings</span><span class="px-2 py-0.5 rounded-md bg-rose-100 text-rose-700"><?= $scheduledHearings ?></span></div>
+                            <div class="w-full bg-white/60 rounded-full progress-wrap overflow-hidden"><div class="progress-bar bg-gradient-to-r from-rose-400 to-rose-500 h-full" style="width: <?= $hearingPercent ?>%"></div></div>
+                            <p class="text-[10px] mt-1 text-rose-800/70">Relative to open cases</p>
+                        </div>
+                        <!-- Summary chips -->
+                        <div class="grid grid-cols-2 gap-3 pt-2">
+                            <div class="glass rounded-xl p-4 flex items-start gap-3"><div class="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600"><i class="fa-solid fa-circle-check"></i></div><div><p class="text-[10px] tracking-wide uppercase font-semibold text-emerald-700">Resolved Cases</p><p class="text-lg leading-snug font-semibold text-emerald-800"><?= $resolvedCaseCount ?></p></div></div>
+                            <div class="glass rounded-xl p-4 flex items-start gap-3"><div class="h-9 w-9 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600"><i class="fa-solid fa-hourglass-half"></i></div><div><p class="text-[10px] tracking-wide uppercase font-semibold text-amber-700">Pending Complaints</p><p class="text-lg leading-snug font-semibold text-amber-800"><?= $pendingCount ?></p></div></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
-        
-        <!-- Recent Activity -->
+
+        <!-- Recent + Chart -->
         <div class="grid grid-cols-1 md:grid-cols-12 gap-6 mt-6 mb-8">
-            <div class="md:col-span-5 bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-                <h2 class="text-lg font-medium text-gray-800 mb-5 flex items-center">
-                    <i class="fas fa-bell text-primary-500 mr-2"></i>
-                    Recent Activity
-                </h2>
+            <div class="md:col-span-5 glass rounded-2xl p-6 md:p-7 fade-in">
+                <div class="flex items-center gap-2 mb-5"><i class="fas fa-bell text-primary-500"></i><h2 class="text-sky-900 font-semibold tracking-tight">Recent Activity</h2></div>
                 <div class="space-y-4">
-                    <div class="flex items-start">
-                        <div class="bg-blue-100 p-2 rounded-full mr-3 mt-1">
-                            <i class="fas fa-plus text-blue-500 text-sm"></i>
-                        </div>
-                        <div>
-                            <p class="text-sm font-medium">New complaint filed</p>
-                            <p class="text-xs text-gray-500">by Juan Dela Cruz • 2 hours ago</p>
-                        </div>
-                    </div>
-                    <div class="flex items-start">
-                        <div class="bg-green-100 p-2 rounded-full mr-3 mt-1">
-                            <i class="fas fa-check text-green-500 text-sm"></i>
-                        </div>
-                        <div>
-                            <p class="text-sm font-medium">Case resolved</p>
-                            <p class="text-xs text-gray-500">Property Boundary Dispute • 5 hours ago</p>
-                        </div>
-                    </div>
-                    <div class="flex items-start">
-                        <div class="bg-purple-100 p-2 rounded-full mr-3 mt-1">
-                            <i class="fas fa-calendar text-purple-500 text-sm"></i>
-                        </div>
-                        <div>
-                            <p class="text-sm font-medium">Hearing scheduled</p>
-                            <p class="text-xs text-gray-500">Unpaid Debt Case • Yesterday</p>
-                        </div>
-                    </div>
-                    <div class="flex items-start">
-                        <div class="bg-yellow-100 p-2 rounded-full mr-3 mt-1">
-                            <i class="fas fa-file-alt text-yellow-500 text-sm"></i>
-                        </div>
-                        <div>
-                            <p class="text-sm font-medium">KP Form generated</p>
-                            <p class="text-xs text-gray-500">Amicable Settlement • Yesterday</p>
-                        </div>
-                    </div>
+                    <?php if (!empty($recentActivities)): ?>
+                        <?php foreach ($recentActivities as $act): ?>
+                            <div class="flex items-start">
+                                <div class="bg-blue-100 p-2 rounded-full mr-3 mt-1"><i class="fas fa-plus text-blue-500 text-sm"></i></div>
+                                <div>
+                                    <p class="text-sm font-medium"><?= htmlspecialchars($act['message']) ?></p>
+                                    <p class="text-xs text-gray-500"><?= htmlspecialchars($act['time']) ?></p>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <p class="text-sm text-gray-500">No recent activity.</p>
+                    <?php endif; ?>
                 </div>
-                <a href="#" class="block text-center text-primary-600 hover:text-primary-700 text-sm mt-4">View All Activity</a>
             </div>
-            
-            <!-- Chart Section -->
-            <div class="md:col-span-7 bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-                <h2 class="text-lg font-medium text-gray-800 mb-5 flex items-center">
-                    <i class="fas fa-chart-line text-primary-500 mr-2"></i>
-                    Monthly Statistics
-                </h2>
+            <div class="md:col-span-7 glass rounded-2xl p-6 md:p-7 fade-in">
+                <div class="flex items-center gap-2 mb-5"><i class="fas fa-chart-line text-primary-500"></i><h2 class="text-sky-900 font-semibold tracking-tight">6‑Month Trends</h2></div>
                 <canvas id="statsChart" height="250"></canvas>
             </div>
         </div>
     </div>
     <?php include 'sidebar_lupon.php'; ?>
-     <script>
+    <script>
+        // Sidebar submenu toggles
         document.querySelectorAll('.toggle-menu').forEach(button => {
-    button.addEventListener('click', () => {
-        const submenu = button.nextElementSibling;
-        submenu.classList.toggle('hidden');
-    });
-});
+            button.addEventListener('click', () => {
+                const submenu = button.nextElementSibling;
+                submenu.classList.toggle('hidden');
+            });
+        });
+
         document.addEventListener('DOMContentLoaded', function() {
+            // Hide loader
+            const loader = document.getElementById('page-loader');
+            if (loader) setTimeout(() => loader.classList.add('fade-out'), 400);
 
-            document.querySelectorAll('.submenu').forEach(submenu => {
-                if (submenu.classList.contains('hidden')) {
-                    submenu.classList.remove('active');
-                }
-            });
-            
-            // Calendar initialization
-            var calendarEl = document.getElementById('calendar');
-            var calendar = new FullCalendar.Calendar(calendarEl, {
-                initialView: 'dayGridMonth',
-                height: 'auto',
-                headerToolbar: {
-                    left: 'prev,next',
-                    center: 'title',
-                    right: 'today'
-                },
-                buttonText: {
-                    today: 'Today'
-                },
-                dayHeaderFormat: { weekday: 'short' },
-                eventTimeFormat: {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    meridiem: 'short'
-                },
-                eventOrder: 'start',
-                eventDisplay: 'block',
-                displayEventTime: true,
-                events: [
-                    { 
-                        title: 'Noise Complaint', 
-                        start: '2025-05-20T10:00:00',
-                        backgroundColor: 'rgba(79, 70, 229, 0.8)',
-                        borderColor: 'rgba(79, 70, 229, 0)',
-                        textColor: '#ffffff',
-                        extendedProps: {
-                            type: 'hearing'
-                        }
-                    },
-                    { 
-                        title: 'Property Dispute Hearing', 
-                        start: '2025-05-22T14:30:00',
-                        backgroundColor: 'rgba(16, 185, 129, 0.8)',
-                        borderColor: 'rgba(16, 185, 129, 0)',
-                        textColor: '#ffffff',
-                        extendedProps: {
-                            type: 'hearing'
-                        }
-                    },
-                    { 
-                        title: 'Unpaid Debt Case', 
-                        start: '2025-05-18T09:00:00',
-                        backgroundColor: 'rgba(245, 158, 11, 0.8)',
-                        borderColor: 'rgba(245, 158, 11, 0)',
-                        textColor: '#ffffff',
-                        extendedProps: {
-                            type: 'hearing'
-                        }
-                    }
-                ]
-            });
-            calendar.render();
-              // Sidebar toggle
-            document.getElementById('menu-btn').addEventListener('click', function() {
-                const sidebar = document.getElementById('sidebar');
-                sidebar.classList.remove('-translate-x-full');
-                // Add overlay when sidebar is open
-                addSidebarOverlay();
-            });
+            // Ensure collapsed submenus are not marked active
+            document.querySelectorAll('.submenu').forEach(submenu => { if (submenu.classList.contains('hidden')) submenu.classList.remove('active'); });
 
-            document.getElementById('close-sidebar').addEventListener('click', function() {
-                const sidebar = document.getElementById('sidebar');
-                sidebar.classList.add('-translate-x-full');
-                // Remove overlay when sidebar is closed
-                removeSidebarOverlay();
-            });            // Toggle submenu items with animation
+            // Calendar is embedded via iframe (see Upcoming Hearings card)
+
+            // Sidebar toggle + overlay
+            const menuBtn = document.getElementById('menu-btn');
+            const closeBtn = document.getElementById('close-sidebar');
+            function addSidebarOverlay(){ if (!document.getElementById('sidebar-overlay')) { const overlay=document.createElement('div'); overlay.id='sidebar-overlay'; overlay.className='fixed inset-0 bg-black bg-opacity-30 z-40'; document.body.appendChild(overlay); overlay.addEventListener('click',()=>{ document.getElementById('sidebar').classList.add('-translate-x-full'); removeSidebarOverlay(); }); } }
+            function removeSidebarOverlay(){ const overlay=document.getElementById('sidebar-overlay'); if (overlay) overlay.remove(); }
+            if (menuBtn) menuBtn.addEventListener('click', ()=>{ const sidebar=document.getElementById('sidebar'); if(sidebar){ sidebar.classList.remove('-translate-x-full'); addSidebarOverlay(); } });
+            if (closeBtn) closeBtn.addEventListener('click', ()=>{ const sidebar=document.getElementById('sidebar'); if(sidebar){ sidebar.classList.add('-translate-x-full'); removeSidebarOverlay(); } });
+
+            // Submenu animations and states
             document.querySelectorAll('.toggle-menu').forEach(button => {
-                button.addEventListener('click', function() {
+                button.addEventListener('click', function(){
                     let submenu = this.nextElementSibling;
-                    
-                    // Use both hidden and active classes for better animation control
                     submenu.classList.toggle('hidden');
-                    
-                    // Add a slight delay before adding/removing active class
-                    if (!submenu.classList.contains('hidden')) {
-                        setTimeout(() => {
-                            submenu.classList.add('active');
-                        }, 10);
-                    } else {
-                        submenu.classList.remove('active');
-                    }
-                    
-                    // Rotate chevron icon when clicked
-                    const chevron = this.querySelector('.fa-chevron-down');
-                    if (chevron) {
-                        chevron.classList.toggle('rotate-180');
-                    }
-                    
-                    // Add active state to the clicked menu item
-                    this.classList.toggle('bg-primary-50');
-                    this.classList.toggle('text-primary-700');
+                    if (!submenu.classList.contains('hidden')) { setTimeout(()=> submenu.classList.add('active'), 10); } else { submenu.classList.remove('active'); }
+                    const chevron = this.querySelector('.fa-chevron-down'); if (chevron) chevron.classList.toggle('rotate-180');
+                    this.classList.toggle('bg-primary-50'); this.classList.toggle('text-primary-700');
                 });
             });
-            
-            // Function to add overlay when sidebar is open
-            function addSidebarOverlay() {
-                // Check if overlay already exists
-                if (!document.getElementById('sidebar-overlay')) {
-                    const overlay = document.createElement('div');
-                    overlay.id = 'sidebar-overlay';
-                    overlay.className = 'fixed inset-0 bg-black bg-opacity-30 z-40';
-                    document.body.appendChild(overlay);
-                    
-                    // Close sidebar when overlay is clicked
-                    overlay.addEventListener('click', function() {
-                        document.getElementById('sidebar').classList.add('-translate-x-full');
-                        removeSidebarOverlay();
-                    });
-                }
-            }
-            
-            // Function to remove overlay
-            function removeSidebarOverlay() {
-                const overlay = document.getElementById('sidebar-overlay');
-                if (overlay) {
-                    overlay.remove();
-                }
-            }
-            
-            // Statistics loading
-            loadStatistics();
-        });
-        
-        // Fetch statistics dynamically (this would typically come from a database)
-        function loadStatistics() {
-            <?php
-            // You would typically fetch these values from a database in PHP
-            // For now we'll keep the static example but note how this could be replaced with PHP code
-            ?>            let complaints = 20;
-            let cases = 12;
-            let hearings = 8;
-            let resolved = 10;
-            let pending = 5;
-            let mediated = 7;
-            let rejected = 3;
 
-            document.getElementById('complaints-count').textContent = complaints;
-            document.getElementById('cases-count').textContent = cases;
-            document.getElementById('hearings-count').textContent = hearings;
-            document.getElementById('resolved-count').textContent = resolved;
-            document.getElementById('pending-count').textContent = pending;
-            document.getElementById('mediated-count').textContent = mediated;
-            document.getElementById('rejected-count').textContent = rejected;
-
-            let max = Math.max(complaints, cases, hearings, resolved, pending, mediated, rejected, 1);            document.getElementById('complaints-progress').style.width = (complaints / max) * 100 + "%";
-            document.getElementById('cases-progress').style.width = (cases / max) * 100 + "%";
-            document.getElementById('hearings-progress').style.width = (hearings / max) * 100 + "%";
-            document.getElementById('resolved-progress').style.width = (resolved / max) * 100 + "%";
-            document.getElementById('pending-progress').style.width = (pending / max) * 100 + "%";
-            document.getElementById('mediated-progress').style.width = (mediated / max) * 100 + "%";
-            document.getElementById('rejected-progress').style.width = (rejected / max) * 100 + "%";
-            
-            // Initialize Chart
-            initChart();
-        }
-        
-        function initChart() {
-            const ctx = document.getElementById('statsChart').getContext('2d');
-            const monthlyData = {
-                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-                datasets: [
-                    {
-                        label: 'Complaints',
-                        data: [5, 8, 12, 15, 20, 23],
-                        borderColor: '#0c9ced',
-                        backgroundColor: 'rgba(12, 156, 237, 0.1)',
-                        borderWidth: 2,
-                        tension: 0.4,
-                        fill: true
+            // Initialize chart (real data like secretary)
+            const ctx = document.getElementById('statsChart');
+            if (ctx) {
+                const chart = new Chart(ctx.getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: <?= json_encode($monthlyLabels) ?>,
+                        datasets: [
+                            { label: 'Complaints', data: <?= json_encode($monthlyComplaints) ?>, borderColor: '#0c9ced', backgroundColor: 'rgba(12,156,237,.12)', borderWidth:2, tension:.4, fill:true },
+                            { label: 'Cases', data: <?= json_encode($monthlyCases) ?>, borderColor: '#059669', backgroundColor: 'rgba(5,150,105,.12)', borderWidth:2, tension:.4, fill:true },
+                            { label: 'Mediation', data: <?= json_encode($monthlyMediation) ?>, borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,.10)', borderWidth:2, tension:.4, fill:true },
+                            { label: 'Resolution', data: <?= json_encode($monthlyResolution) ?>, borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,.10)', borderWidth:2, tension:.4, fill:true },
+                            { label: 'Settlement', data: <?= json_encode($monthlySettlement) ?>, borderColor: '#14b8a6', backgroundColor: 'rgba(20,184,166,.10)', borderWidth:2, tension:.4, fill:true },
+                            { label: 'Closed', data: <?= json_encode($monthlyClosed) ?>, borderColor: '#dc2626', backgroundColor: 'rgba(220,38,38,.10)', borderWidth:2, tension:.4, fill:true },
+                            { label: 'Resolved Cases', data: <?= json_encode($monthlyResolved) ?>, borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,.10)', borderWidth:2, tension:.4, fill:true }
+                        ]
                     },
-                    {
-                        label: 'Cases',
-                        data: [3, 5, 7, 9, 12, 15],
-                        borderColor: '#FBBF24',
-                        backgroundColor: 'rgba(251, 191, 36, 0.1)',
-                        borderWidth: 2,
-                        tension: 0.4,
-                        fill: true
-                    },
-                    {
-                        label: 'Resolved',
-                        data: [1, 3, 5, 6, 8, 10],
-                        borderColor: '#10B981',
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                        borderWidth: 2,
-                        tension: 0.4,
-                        fill: true
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { position: 'bottom', labels: { boxWidth: 14, usePointStyle: true } } },
+                        scales: { y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,.05)' } }, x: { grid: { display: false } } }
                     }
-                ]
-            };
-            
-            new Chart(ctx, {
-                type: 'line',
-                data: monthlyData,
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            position: 'top',
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            grid: {
-                                drawBorder: false,
-                                color: '#f3f4f6'
-                            }
-                        },
-                        x: {
-                            grid: {
-                                display: false
-                            }
-                        }
-                    }
-                }
-            });
-        }          // Call loadStatistics on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            loadStatistics();
+                });
+            }
         });
     </script>
         

@@ -473,7 +473,15 @@ checkDeadlines3Days($conn, 'case_info', 'Case_ID', 'Deadline Overdue', 'Deadline
         resetBtn.addEventListener('click',()=>{ searchInput.value=''; monthFilter.value=''; yearFilter.value=''; sortOrder.value='desc'; filterOverride=''; chips.forEach((c,i)=>{ c.classList.remove('active','bg-primary-600','text-white','shadow'); if(i===0){ c.classList.add('active','bg-primary-600','text-white','shadow'); } }); applyFilters(); });
         // Mark all read
         const markAll=document.getElementById('markAllReadBtn');
-        markAll.addEventListener('click',()=>{ fetch('../controllers/mark_all_notifications_read.php',{method:'POST',headers:{'Content-Type':'application/json'}}).then(r=>r.json()).then(d=>{ if(d.success){ cards.forEach(c=>{ if(c.dataset.unread==='1'){ c.dataset.unread='0'; const dot=c.querySelector('.animate-pulse-subtle'); if(dot) dot.remove(); } }); } }); });
+        markAll.addEventListener('click',()=>{
+            fetch('../controllers/mark_all_notifications_read.php',{
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({scope:'secretary'})
+            }).then(r=>r.json()).then(d=>{ if(d.success){
+                cards.forEach(c=>{ if(c.dataset.unread==='1'){ c.dataset.unread='0'; const dot=c.querySelector('.animate-pulse-subtle'); if(dot) dot.remove(); } });
+            }}).catch(e=> console.warn('Failed to mark all read:', e));
+        });
         applyFilters();
     });
     </script>

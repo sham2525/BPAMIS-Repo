@@ -80,6 +80,7 @@ if ($result && $result->num_rows > 0) {
         .gradient-bg {
             background: linear-gradient(to right, #f0f7ff, #e0effe);
         }
+        .shadow-glow { box-shadow: 0 0 0 1px rgba(12,156,237,0.08), 0 10px 24px -8px rgba(6,90,143,0.20); }
         .card-hover {
             transition: all 0.3s ease;
         }
@@ -364,11 +365,18 @@ if ($result && $result->num_rows > 0) {
 <body class="bg-gray-50 font-sans">
     <?php include_once ('../includes/barangay_official_cap_nav.php'); ?>
 
+    <!-- Global Background Blush (floating orbs) -->
+    <div class="fixed inset-0 -z-10 pointer-events-none overflow-hidden">
+        <div class="absolute -top-16 -right-24 w-[28rem] h-[28rem] bg-primary-100 rounded-full blur-3xl opacity-60 animate-float"></div>
+        <div class="absolute top-1/3 -left-24 w-[22rem] h-[22rem] bg-primary-200 rounded-full blur-3xl opacity-50 animate-float"></div>
+        <div class="absolute -bottom-24 right-1/4 w-[20rem] h-[20rem] bg-primary-50 rounded-full blur-2xl opacity-60 animate-float" style="animation-delay:1.2s"></div>
+    </div>
+
     <!-- Page Header -->
-    <div class="w-full mt-10 px-4">
-        <div class="gradient-bg rounded-2xl shadow-sm p-8 md:p-10 relative overflow-hidden">
-            <div class="absolute top-0 right-0 w-64 h-64 bg-primary-100 rounded-full -mr-20 -mt-20 opacity-70"></div>
-            <div class="absolute bottom-0 left-0 w-40 h-40 bg-primary-200 rounded-full -ml-10 -mb-10 opacity-60"></div>
+    <div class="max-w-7xl mx-auto w-full mt-10 px-4">
+        <div class="gradient-bg rounded-2xl shadow-sm p-8 md:p-10 relative overflow-hidden border border-primary-100/60 shadow-glow">
+            <div class="absolute top-0 right-0 w-64 h-64 bg-primary-100 rounded-full -mr-20 -mt-20 opacity-70 animate-float"></div>
+            <div class="absolute bottom-0 left-0 w-40 h-40 bg-primary-200 rounded-full -ml-10 -mb-10 opacity-60 animate-float"></div>
             <div class="relative z-10 flex justify-between items-center">
                 <div>
                     <h2 class="text-3xl font-light text-primary-800">Your <span class="font-medium">Notifications</span></h2>
@@ -384,30 +392,44 @@ if ($result && $result->num_rows > 0) {
     </div>
     
     <!-- Filters & Search -->
-    <div class="w-full mt-6 px-4">
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-            <div class="flex flex-wrap justify-between items-center">
-                <div class="flex flex-wrap items-center gap-2 mb-2 md:mb-0">
+    <div class="max-w-7xl mx-auto w-full mt-6 px-4">
+        <div class="relative rounded-2xl border border-primary-100/60 bg-gradient-to-r from-white to-primary-50/40 shadow-glow p-4 md:p-6 overflow-hidden">
+            <div class="absolute -top-12 -right-10 w-40 h-40 bg-primary-100 rounded-full blur-2xl opacity-70 animate-float"></div>
+            <div class="absolute -bottom-10 -left-10 w-32 h-32 bg-primary-200 rounded-full blur-2xl opacity-60 animate-float" style="animation-delay:.8s"></div>
+            <div class="relative z-10 flex flex-col gap-3 md:flex-row md:justify-between md:items-center">
+                <div class="flex flex-wrap items-center gap-2">
                     <button class="px-3 py-1 bg-primary-50 text-primary-700 rounded-lg text-sm font-medium border border-primary-100">All</button>
                     <button class="px-3 py-1 text-gray-500 rounded-lg text-sm hover:bg-gray-50">Unread</button>
                     <button class="px-3 py-1 text-gray-500 rounded-lg text-sm hover:bg-gray-50">Cases</button>
                     <button class="px-3 py-1 text-gray-500 rounded-lg text-sm hover:bg-gray-50">Complaints</button>
                     <button class="px-3 py-1 text-gray-500 rounded-lg text-sm hover:bg-gray-50">Hearings</button>
-                    <button class="px-3 py-1 text-gray-500 rounded-lg text-sm hover:bg-gray-50">Unverified Accounts</button>
+                   
                 </div>
-                
-                <div class="flex items-center gap-4">
+                <div class="flex flex-wrap items-center gap-3">
                     <div class="relative">
                         <input 
                             type="text" 
                             placeholder="Search notifications..." 
-                            class="pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-300 w-full"
+                            class="pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-300 w-full bg-white/80 backdrop-blur"
                         >
                         <div class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
                             <i class="fas fa-search"></i>
                         </div>
                     </div>
-                    <button class="text-primary-600 hover:text-primary-700 text-sm font-medium whitespace-nowrap">
+                    <select id="monthFilter" class="py-2 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-100 bg-white/80 backdrop-blur">
+                        <option value="">All Months</option>
+                        <?php for ($m=1; $m<=12; $m++){ $mn = date('F', mktime(0,0,0,$m,1)); echo "<option value=\"$m\">$mn</option>"; } ?>
+                    </select>
+                    <select id="yearFilter" class="py-2 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-100 bg-white/80 backdrop-blur">
+                        <option value="">All Years</option>
+                        <?php $cy = (int)date('Y'); for ($y=$cy; $y>=$cy-10; $y--){ echo "<option value=\"$y\">$y</option>"; } ?>
+                    </select>
+                    <select id="sortSelect" class="py-2 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-100 bg-white/80 backdrop-blur">
+                        <option value="newest">Newest</option>
+                        <option value="oldest">Oldest</option>
+                    </select>
+                    <button id="resetFilters" class="py-2 px-3 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 bg-white/80 backdrop-blur">Reset</button>
+                    <button id="markAllReadBtn" class="text-primary-600 hover:text-primary-700 text-sm font-medium whitespace-nowrap">
                         <i class="fas fa-check-double mr-1"></i> Mark all as read
                     </button>
                 </div>
@@ -417,7 +439,7 @@ if ($result && $result->num_rows > 0) {
 
     <!-- Notifications List -->
 <div id="notification-regular">
-    <div class="w-full mt-6 px-4 pb-10">
+    <div class="max-w-7xl mx-auto w-full mt-6 px-4 pb-10">
         <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             <div class="divide-y divide-gray-100">
                 <?php if (!empty($notifications)): ?>
@@ -439,11 +461,6 @@ if ($result && $result->num_rows > 0) {
                                     $bgColor = 'bg-green-100';
                                     $iconColor = 'text-green-600';
                                     break;
-                                case 'Unverified':
-                                    $icon = 'fa-user-circle';
-                                    $bgColor = 'bg-red-100';
-                                    $iconColor = 'text-red-600';
-                                    break;
                                 case 'Case':
                                     $icon = 'fa-gavel';
                                     $bgColor = 'bg-yellow-100';
@@ -456,7 +473,8 @@ if ($result && $result->num_rows > 0) {
                         ?>
                        <div class="notification-card p-5 relative cursor-pointer <?= $isUnread ? 'bg-gray-50' : '' ?>" 
      data-type="<?= strtolower($row['type']) ?>" 
-     data-unread="<?= $isUnread ? 'true' : 'false' ?>">
+     data-unread="<?= $isUnread ? 'true' : 'false' ?>"
+     data-created="<?= htmlspecialchars($row['created_at']) ?>">
 
 
                             <?php if ($isUnread): ?>
@@ -551,7 +569,7 @@ if ($result && $result->num_rows > 0) {
             </div>
             
             <div class="mt-6 flex justify-center">
-                <button onclick="window.location.href='home-secretary.php'" class="px-4 py-2 text-gray-500 hover:text-gray-700 flex items-center transition-colors">
+                <button onclick="window.location.href='home-captain.php'" class="px-4 py-2 text-gray-500 hover:text-gray-700 flex items-center transition-colors">
                     <i class="fas fa-arrow-left mr-2"></i> Back to Dashboard
                 </button>
             </div>
@@ -568,7 +586,7 @@ if ($result && $result->num_rows > 0) {
             <h3 class="text-lg font-medium text-gray-700 mb-2">No notifications yet</h3>
             <p class="text-gray-500 max-w-md mx-auto">When you receive new notifications about your cases or complaints, they will appear here.</p>
             <div class="mt-6">
-                <button onclick="window.location.href='home-secretary.php'" class="px-4 py-2 bg-primary-50 text-primary-600 rounded-lg text-sm font-medium hover:bg-primary-100 transition-colors">
+                <button onclick="window.location.href='home-captain.php'" class="px-4 py-2 bg-primary-50 text-primary-600 rounded-lg text-sm font-medium hover:bg-primary-100 transition-colors">
                     Return to Dashboard
                 </button>
             </div>
@@ -578,116 +596,156 @@ if ($result && $result->num_rows > 0) {
 
     <script>
      document.addEventListener('DOMContentLoaded', function() {
-    const filterButtons = document.querySelectorAll('.px-3.py-1.rounded-lg.text-sm');
-    const searchInput = document.querySelector('input[type="text"]');
-    const notificationCards = document.querySelectorAll('.notification-card');
-    let activeFilter = 'All';
+        const filterButtons = document.querySelectorAll('.px-3.py-1.rounded-lg.text-sm');
+        const searchInput = document.querySelector('input[type="text"]');
+        const notificationCards = Array.from(document.querySelectorAll('#notification-regular .notification-card'));
+        const listWrapper = document.querySelector('#notification-regular .divide-y.divide-gray-100');
+        const monthSelect = document.getElementById('monthFilter');
+        const yearSelect = document.getElementById('yearFilter');
+        const sortSelect = document.getElementById('sortSelect');
+        const resetBtn = document.getElementById('resetFilters');
+        let activeFilter = 'All';
 
-    function applyFilters() {
-    const query = searchInput.value.toLowerCase();
-    let hasResults = false;
+        function applyFilters() {
+            const query = (searchInput?.value || '').toLowerCase();
+            const month = monthSelect?.value || '';
+            const year = yearSelect?.value || '';
+            let hasResults = false;
 
-    notificationCards.forEach(card => {
-        const type = card.dataset.type;
-        const isUnread = card.dataset.unread === 'true';
-        const content = card.textContent.toLowerCase(); // ✅ FIXED HERE
-        let matchesFilter = false;
+            notificationCards.forEach(card => {
+                const type = card.dataset.type; // 'case','complaint','hearing','unverified'
+                const isUnread = card.dataset.unread === 'true';
+                const content = card.textContent.toLowerCase();
+                const created = card.dataset.created || '';
+                const [y, m] = created.split(/[T\s-:]/); // crude parse: y=0, m=1
+                const okMonth = !month || parseInt(m || '0') === parseInt(month);
+                const okYear = !year || parseInt(y || '0') === parseInt(year);
 
-        if (activeFilter === 'All') {
-            matchesFilter = true;
-        } else if (activeFilter === 'Unread') {
-            matchesFilter = isUnread;
-        } else if (activeFilter === 'Unverified Accounts') {
-            matchesFilter = false;
-        } else {
-    
-    const normalizedFilter = activeFilter.toLowerCase().replace(/s$/, '');
-    matchesFilter = type === normalizedFilter;
-}
+                let matchesFilter = false;
+                if (activeFilter === 'All') matchesFilter = true;
+                else if (activeFilter === 'Unread') matchesFilter = isUnread;
+                else if (activeFilter === 'Unverified Accounts') matchesFilter = false; // handled via container toggle below
+                else {
+                    const normalizedFilter = activeFilter.toLowerCase().replace(/s$/, '');
+                    matchesFilter = type === normalizedFilter;
+                }
 
-        const matchesSearch = content.includes(query);
+                const matchesSearch = !query || content.includes(query);
+                const show = matchesSearch && matchesFilter && okMonth && okYear;
+                card.style.display = show ? '' : 'none';
+                hasResults = hasResults || show;
+            });
 
-        if (matchesSearch && matchesFilter) {
-            card.style.display = '';
-            hasResults = true;
-        } else {
-            card.style.display = 'none';
+            const container = document.querySelector('#notification-regular .bg-white');
+
+            if (activeFilter === 'Unverified Accounts') {
+                container?.classList.add('hidden');
+                document.getElementById('notification-unverified').classList.remove('hidden');
+                document.getElementById('no-notifications').classList.add('hidden');
+                return;
+            }
+
+            document.getElementById('notification-unverified').classList.add('hidden');
+
+            if (!hasResults) {
+                container?.classList.add('hidden');
+                const empty = document.getElementById('no-notifications');
+                empty.classList.remove('hidden');
+                empty.querySelector('h3').textContent = 'No matching notifications';
+            } else {
+                container?.classList.remove('hidden');
+                document.getElementById('no-notifications').classList.add('hidden');
+            }
+
+            document.querySelector('.mt-6.flex.justify-center').classList.toggle('hidden', activeFilter !== 'All');
         }
-    });
 
-    const container = document.querySelector('.divide-y.divide-gray-100').parentElement;
+        function sortCards() {
+            if (!listWrapper) return;
+            const order = sortSelect?.value || 'newest';
+            const items = Array.from(listWrapper.children).filter(el => el.classList.contains('notification-card'));
+            items.sort((a, b) => {
+                const da = new Date(a.dataset.created || 0).getTime();
+                const db = new Date(b.dataset.created || 0).getTime();
+                return order === 'oldest' ? da - db : db - da;
+            });
+            items.forEach(el => listWrapper.appendChild(el));
+        }
 
-    if (activeFilter === 'Unverified Accounts') {
-        container.classList.add('hidden');
-        document.getElementById('notification-unverified').classList.remove('hidden');
-        document.getElementById('no-notifications').classList.add('hidden');
-        return;
-    }
+        filterButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                filterButtons.forEach(btn => {
+                    btn.classList.remove('bg-primary-50', 'text-primary-700', 'border', 'border-primary-100');
+                    btn.classList.add('text-gray-500');
+                });
+                this.classList.remove('text-gray-500');
+                this.classList.add('bg-primary-50', 'text-primary-700', 'border', 'border-primary-100');
+                activeFilter = (this.textContent || '').trim();
+                applyFilters();
+            });
+        });
 
-    if (!hasResults) {
-        container.classList.add('hidden');
-        document.getElementById('no-notifications').classList.remove('hidden');
-        document.getElementById('no-notifications').querySelector('h3').textContent = 'No matching notifications';
-    } else {
-        container.classList.remove('hidden');
-        document.getElementById('no-notifications').classList.add('hidden');
-    }
-
-    document.querySelector('.mt-6.flex.justify-center').classList.toggle('hidden', activeFilter !== 'All');
-    document.getElementById('notification-unverified').classList.add('hidden');
-}
-
-
-    filterButtons.forEach(button => {
-        button.addEventListener('click', function() {
+        searchInput?.addEventListener('input', applyFilters);
+        monthSelect?.addEventListener('change', applyFilters);
+        yearSelect?.addEventListener('change', applyFilters);
+        sortSelect?.addEventListener('change', () => { sortCards(); applyFilters(); });
+        resetBtn?.addEventListener('click', () => {
+            if (searchInput) searchInput.value = '';
+            if (monthSelect) monthSelect.value = '';
+            if (yearSelect) yearSelect.value = '';
+            if (sortSelect) sortSelect.value = 'newest';
+            // reset active filter
+            activeFilter = 'All';
             filterButtons.forEach(btn => {
                 btn.classList.remove('bg-primary-50', 'text-primary-700', 'border', 'border-primary-100');
                 btn.classList.add('text-gray-500');
             });
-            this.classList.remove('text-gray-500');
-            this.classList.add('bg-primary-50', 'text-primary-700', 'border', 'border-primary-100');
-
-            activeFilter = this.textContent.trim();
+            const first = filterButtons[0];
+            if (first) {
+                first.classList.add('bg-primary-50','text-primary-700','border','border-primary-100');
+                first.classList.remove('text-gray-500');
+            }
+            sortCards();
             applyFilters();
         });
-    });
 
-    searchInput.addEventListener('input', function() {
+        sortCards();
         applyFilters();
-    });
 
-    applyFilters();
-   
-
-   
-
-            
-            // Mark all as read functionality
-            const markAllButton = document.querySelector('button:has(.fa-check-double)');
-            markAllButton.addEventListener('click', function() {
-                document.querySelectorAll('.unread-indicator').forEach(indicator => {
-                    indicator.classList.add('opacity-0');
-                    setTimeout(() => {
-                        indicator.remove();
-                    }, 300);
+        // Mark all as read functionality (server + UI)
+        const markAllButton = document.getElementById('markAllReadBtn');
+        markAllButton?.addEventListener('click', async function() {
+            try {
+                const res = await fetch('../controllers/mark_all_notifications_read.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scope: 'captain' })
                 });
-            });
-            
-            // Mobile menu toggle
-            const menuButton = document.getElementById('mobile-menu-button');
-            const mobileMenu = document.getElementById('mobile-menu');
-            
-            if (menuButton && mobileMenu) {
-                menuButton.addEventListener('click', function() {
-                    this.classList.toggle('active');
-                    if (mobileMenu.style.transform === 'translateY(0%)') {
-                        mobileMenu.style.transform = 'translateY(-100%)';
-                    } else {
-                        mobileMenu.style.transform = 'translateY(0%)';
-                    }
-                });
+                const data = await res.json();
+                if (data.success) {
+                    document.querySelectorAll('#notification-regular .s-notif-card').forEach(card => {
+                        card.dataset.unread = '0';
+                    });
+                    document.querySelectorAll('.unread-indicator').forEach(indicator => {
+                        indicator.classList.add('opacity-0');
+                        setTimeout(() => { indicator.remove(); }, 250);
+                    });
+                }
+            } catch (e) {
+                console.warn('Failed to mark all as read:', e);
             }
         });
+
+        // Mobile menu toggle
+        const menuButton = document.getElementById('mobile-menu-button');
+        const mobileMenu = document.getElementById('mobile-menu');
+        if (menuButton && mobileMenu) {
+            menuButton.addEventListener('click', function() {
+                this.classList.toggle('active');
+                mobileMenu.style.transform = (mobileMenu.style.transform === 'translateY(0%)') ? 'translateY(-100%)' : 'translateY(0%)';
+            });
+        }
+    });
     </script>
     
     <!-- Chatbot Button and Container -->

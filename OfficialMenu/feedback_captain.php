@@ -11,68 +11,28 @@ if (!isset($_SESSION['official_id'])) {
 $official_id = $_SESSION['official_id'];
 $official_name = $_SESSION['official_name'] ?? 'Unknown';
 
-// Resolve Lupon full name from DB to match assignment text (more reliable than session)
-$luponName = $official_name;
-if ($stmt = $conn->prepare("SELECT Name FROM barangay_officials WHERE Official_ID = ?")) {
-    $stmt->bind_param('i', $official_id);
-    if ($stmt->execute()) {
-        $res = $stmt->get_result();
-        if ($res && $row = $res->fetch_assoc()) {
-            $luponName = trim((string)($row['Name'] ?? $luponName));
-        }
-    }
-    $stmt->close();
-}
-
 $success = '';
 $error = '';
 $cases = [];
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $case_id = isset($_POST['case_id']) ? (int)$_POST['case_id'] : 0;
+    $case_id = $_POST['case_id'] ?? '';
     $message = trim($_POST['message'] ?? '');
 
-    if ($case_id > 0 && $message !== '') {
-        // Validate that this case is assigned to this Lupon
-        $isAssigned = false;
-        $checkSql = "
-            SELECT 1
-            FROM case_info ci
-            LEFT JOIN mediation_info mi ON mi.case_id = ci.Case_ID
-            LEFT JOIN resolution r ON r.case_id = ci.Case_ID
-            LEFT JOIN settlement s ON s.case_id = ci.Case_ID
-            WHERE ci.Case_ID = ? AND (
-                mi.mediator_name LIKE CONCAT('%', ?, '%') OR
-                r.mediator_name LIKE CONCAT('%', ?, '%') OR
-                s.mediator_name LIKE CONCAT('%', ?, '%') OR
-                ci.lupon_assign LIKE CONCAT('%', ?, '%')
-            )
-            LIMIT 1
-        ";
-        if ($cs = $conn->prepare($checkSql)) {
-            $cs->bind_param('issss', $case_id, $luponName, $luponName, $luponName, $luponName);
-            $cs->execute();
-            $cr = $cs->get_result();
-            $isAssigned = $cr && $cr->num_rows > 0;
-            $cs->close();
-        }
+    if (!empty($case_id) && !empty($message)) {
+        $stmt = $conn->prepare("
+            INSERT INTO feedback (official_id, official_name, case_id, message, created_at)
+            VALUES (?, ?, ?, ?, NOW())
+        ");
+        $stmt->bind_param("isis", $official_id, $official_name, $case_id, $message);
 
-        if ($isAssigned) {
-            $stmt = $conn->prepare("
-                INSERT INTO feedback (official_id, official_name, case_id, message, created_at)
-                VALUES (?, ?, ?, ?, NOW())
-            ");
-            $stmt->bind_param("isis", $official_id, $official_name, $case_id, $message);
-            if ($stmt->execute()) {
-                $success = "Feedback successfully submitted.";
-            } else {
-                $error = "Error inserting feedback: " . $conn->error;
-            }
-            $stmt->close();
+        if ($stmt->execute()) {
+            $success = "Feedback successfully submitted.";
         } else {
-            $error = "You can only submit feedback for cases assigned to you.";
+            $error = "Error inserting feedback: " . $conn->error;
         }
+        $stmt->close();
     } else {
         $error = "Please select a case and enter your feedback.";
     }
@@ -102,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </style>
 </head>
 <body class="min-h-screen font-sans bg-gradient-to-br from-primary-50 via-white to-primary-100 text-gray-800 relative overflow-x-hidden bg-orbs">
-    <?php include '../includes/barangay_official_lupon_nav.php'; ?>
+    <?php include '../includes/barangay_official_cap_nav.php'; ?>
 
     <!-- Page Heading (mirrors secretary add complaints) -->
     <header class="relative max-w-6xl mx-auto px-4 md:px-8 pt-8 animate-fade-in">
@@ -115,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <span class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary-100 text-primary-600 shadow-inner ring-1 ring-white/60"><i class="fa fa-comment-dots text-lg"></i></span>
                         <span class="bg-clip-text text-transparent bg-gradient-to-r from-primary-700 to-primary-500">Write Feedback</span>
                     </h1>
-                    <p class="mt-3 text-sm md:text-base text-gray-600 max-w-prose">Share your observations and recommendations regarding the case proceedings.</p>
+                    <p class="mt-3 text-sm md:text-base text-gray-600 max-w-prose">Provide guidance and feedback on barangay cases and proceedings.</p>
                 </div>
                 <div class="flex items-center gap-3 text-xs text-gray-500">
                     <div class="px-3 py-1 rounded-full bg-white/70 border border-primary-100 flex items-center gap-2"><i class="fa fa-shield-halved text-primary-500"></i> Secure Form</div>
@@ -130,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <section class="glass rounded-2xl shadow-glow border border-white/60 ring-1 ring-primary-100/50 p-6 md:p-10 animate-fade-in">
             <div class="mb-8 flex items-center justify-between flex-wrap gap-4">
                 <h2 class="text-lg md:text-xl font-semibold text-gray-800 flex items-center gap-2"><i class="fa fa-pen-to-square text-primary-500"></i> Feedback Details</h2>
-                <a href="home-lupon.php" class="inline-flex items-center gap-2 text-sm text-primary-600 hover:text-primary-700 font-medium"><i class="fa fa-arrow-left"></i> Back</a>
+                <a href="home-captain.php" class="inline-flex items-center gap-2 text-sm text-primary-600 hover:text-primary-700 font-medium"><i class="fa fa-arrow-left"></i> Back</a>
             </div>
 
             <?php if (!empty($success)): ?>
@@ -146,52 +106,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <select id="case-id" name="case_id" class="input-base" required>
                             <option value="">-- Select a Case --</option>
                             <?php
-                            // Use Complaint_Description if available; fallback to Complaint_Title
-                            $hasDesc = false;
-                            if ($chk = $conn->query("SHOW COLUMNS FROM complaint_info LIKE 'Complaint_Description'")) {
-                                $hasDesc = $chk->num_rows > 0;
-                                $chk->close();
-                            }
-                            $descField = $hasDesc ? 'co.Complaint_Description' : 'co.Complaint_Title';
-
-                            // Select only cases assigned to this Lupon via mediator_name in mediation/resolution/settlement or via case_info.lupon_assign CSV
-                            $sql = "
-                                SELECT ci.Case_ID,
-                                       COALESCE(NULLIF(TRIM(co.case_type), ''), 'N/A') AS case_type,
-                                       $descField AS complaint_desc
-                                FROM case_info ci
-                                JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID
-                                LEFT JOIN mediation_info mi ON mi.case_id = ci.Case_ID
-                                LEFT JOIN resolution r ON r.case_id = ci.Case_ID
-                                LEFT JOIN settlement s ON s.case_id = ci.Case_ID
-                                WHERE (
-                                    mi.mediator_name LIKE CONCAT('%', ?, '%') OR
-                                    r.mediator_name LIKE CONCAT('%', ?, '%') OR
-                                    s.mediator_name LIKE CONCAT('%', ?, '%') OR
-                                    ci.lupon_assign LIKE CONCAT('%', ?, '%')
-                                )
-                                GROUP BY ci.Case_ID, case_type, complaint_desc
-                                ORDER BY ci.Case_ID ASC
-                            ";
-
-                            if ($st = $conn->prepare($sql)) {
-                                $st->bind_param('ssss', $luponName, $luponName, $luponName, $luponName);
-                                $st->execute();
-                                $rs = $st->get_result();
-                                if ($rs && $rs->num_rows > 0) {
-                                    while ($row = $rs->fetch_assoc()) {
-                                        $cid = (int)$row['Case_ID'];
-                                        $ctype = $row['case_type'] ?? 'N/A';
-                                        $label = 'Case #' . $cid . ' — ' . $ctype;
-                                        // Provide minimal data attributes for quick client display if needed
-                                        echo '<option value="' . $cid . '" data-case-type="' . htmlspecialchars($ctype) . '">' . htmlspecialchars($label) . '</option>';
-                                    }
-                                } else {
-                                    echo '<option disabled>No assigned cases found</option>';
+                            // Display all cases with compact label: Case #ID — case_type
+                            $sql = "SELECT ci.Case_ID, COALESCE(NULLIF(TRIM(co.case_type), ''), 'N/A') AS case_type
+                                    FROM case_info ci
+                                    JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID
+                                    ORDER BY ci.Case_ID ASC";
+                            $result = $conn->query($sql);
+                            if ($result && $result->num_rows > 0) {
+                                while ($row = $result->fetch_assoc()) {
+                                    $cid = (int)$row['Case_ID'];
+                                    $ctype = $row['case_type'] ?? 'N/A';
+                                    $label = 'Case #' . $cid . ' — ' . $ctype;
+                                    echo '<option value="' . $cid . '" data-case-type="' . htmlspecialchars($ctype) . '">' . htmlspecialchars($label) . '</option>';
                                 }
-                                $st->close();
                             } else {
-                                echo '<option disabled>Unable to load assigned cases</option>';
+                                echo '<option disabled>No cases found</option>';
                             }
                             ?>
                         </select>
@@ -211,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
 
                 <div class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-dashed border-primary-200/60">
-                    <a href="home-lupon.php" class="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-white/70 hover:bg-white text-gray-600 border border-gray-300 text-sm font-medium shadow-sm transition"><i class="fa fa-xmark"></i> Cancel</a>
+                    <a href="home-captain.php" class="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-white/70 hover:bg-white text-gray-600 border border-gray-300 text-sm font-medium shadow-sm transition"><i class="fa fa-xmark"></i> Cancel</a>
                     <button type="submit" class="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold shadow focus:outline-none focus:ring-4 focus:ring-primary-300/50 transition">
                         <i class="fa fa-paper-plane"></i> Submit Feedback
                     </button>
@@ -219,8 +148,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </form>
         </section>
     </main>
-
-    <?php include '../chatbot/bpamis_case_assistant.php'; ?>
     <script>
     document.addEventListener('DOMContentLoaded', function(){
         const sel = document.getElementById('case-id');
@@ -240,7 +167,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         {label:'Details', value: c.complaint ?? '—'},
                         {label:'Next Hearing', value: c.next_hearing ?? '—'}
                     ];
-                    panel.innerHTML = '<div class="space-y-2">'+ rows.map(r=>`<div class="flex gap-3 text-sm"><div class="w-32 text-gray-500 font-medium">${r.label}</div><div class="flex-1 text-gray-800">${r.value}</div></div>`).join('') + '</div>';
+                    panel.innerHTML = '<div class="space-y-2">'+ rows.map(r=>`<div class=\"flex gap-3 text-sm\"><div class=\"w-32 text-gray-500 font-medium\">${r.label}</div><div class=\"flex-1 text-gray-800\">${r.value}</div></div>`).join('') + '</div>';
                 } else {
                     panel.innerHTML = '<div class="text-sm text-red-600">Unable to load case details.</div>';
                 }
@@ -249,7 +176,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         sel?.addEventListener('change', (e)=> loadCaseDetails(e.target.value));
-        // If a case is pre-selected by server postback, load its details
         if(sel && sel.value){ loadCaseDetails(sel.value); }
     });
     </script>

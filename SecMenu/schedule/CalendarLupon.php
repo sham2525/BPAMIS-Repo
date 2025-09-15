@@ -30,9 +30,6 @@ if (!empty($_SESSION['official_id'])) {
 
 
 ?>
-<script>
-var scheds = <?= json_encode($sched_res) ?>;
-</script>
 
 <!DOCTYPE html>
 <html lang="en">
@@ -51,57 +48,68 @@ var scheds = <?= json_encode($sched_res) ?>;
   <script src="./fullcalendar/lib/main.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
   <style>
+    html, body { height:100%; }
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin:0;
+      padding:0;
+      display:flex;
+      flex-direction:column;
     }
     /* Modern glassmorphism calendar container */
+    #calendar-wrapper { flex:1 1 auto; display:flex; padding:0.8rem 0.8rem 0.5rem 0.5rem; }
     #calendar {
-      background: rgba(248, 250, 252, 0.85);
-      box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.10);
-      border-radius: 22px;
-      border: 1.5px solid #e0e7ef;
-      padding: 2rem 1.5rem 1.5rem 1.5rem;
-      transition: box-shadow 0.3s, transform 0.3s;
-      backdrop-filter: blur(8px);
+      width:100%;
+      height:100%;
+      background:rgba(255,255,255,0.7);
+      box-shadow:0 6px 28px -10px rgba(12,110,175,0.25),0 2px 10px -4px rgba(12,110,175,0.18);
+      border-radius:20px;
+      border:1px solid rgba(180,205,225,0.55);
+      padding:1.25rem 1rem .75rem 1rem;
+      transition:box-shadow .3s, transform .3s;
+      backdrop-filter:blur(10px);
     }
-    #calendar:hover {
-      box-shadow: 0 16px 48px 0 rgba(31, 38, 135, 0.18);
-      transform: translateY(-4px) scale(1.01);
-    }
+    #calendar:hover { transform: translateY(-4px) scale(1.01); }
     .fc .fc-toolbar-title {
-      font-weight: 800;
-      font-size: 1.5rem;
+      font-weight: 700;
+      font-size: 1.15rem;
       color: #0281d4;
       letter-spacing: 0.5px;
       display: flex;
       align-items: center;
-      gap: 0.5em;
+      gap: 0.4em;
     }
     .fc .fc-button {
       box-shadow: none !important;
-      padding: 0.5rem 1.1rem;
-      border-radius: 10px !important;
-      font-weight: 700;
-      font-size: 1.1rem;
-      transition: all 0.2s;
+      padding: 0.32rem 0.60rem;
+      border-radius: 7px !important;
+      font-weight: 600;
+      font-size: 0.78rem;
+      line-height: 1;
+      transition: all 0.18s;
       text-transform: capitalize;
-      border: 1.5px solid #bae6fd !important;
-      background: linear-gradient(90deg, #e0f2fe 0%, #f0f9ff 100%) !important;
-      color: #0281d4 !important;
-      margin: 0 0.2rem;
+      border: 1px solid #b6e1f7 !important;
+      background: linear-gradient(120deg, #e8f7ff 0%, #f3fbff 100%) !important;
+      color: #0276c4 !important;
+      margin: 0 0.15rem;
       display: flex;
       align-items: center;
-      gap: 0.3em;
+      gap: 0.25em;
+      min-height: 30px;
     }
+    .fc .fc-button .fc-icon { font-size: 0.9rem; }
+    /* Compact arrow buttons */
+    .fc .fc-prev-button, .fc .fc-next-button { padding: 0.25rem 0.5rem !important; width: 32px; }
     .fc .fc-button-primary:hover {
-      background: linear-gradient(90deg, #bae6fd 0%, #e0f2fe 100%) !important;
+      background: linear-gradient(120deg, #d5eefc 0%, #e8f7ff 100%) !important;
       color: #0369a1 !important;
-      transform: scale(1.07);
+      transform: translateY(-2px);
     }
     .fc .fc-button-primary:not(:disabled).fc-button-active, 
     .fc .fc-button-primary:not(:disabled):active {
-      background: #f0f9ff !important;
-      color: #0ea5e9 !important;
+      background: #e4f6ff !important;
+      color: #0b6fa2 !important;
+      box-shadow: inset 0 0 0 1px #9ed3ed;
     }
     .fc .fc-daygrid-day-number {
       padding: 12px;
@@ -181,11 +189,8 @@ var scheds = <?= json_encode($sched_res) ?>;
         width: 100%;
         box-sizing: border-box;
       }
-      .fc .fc-toolbar-title {
-        font-size: 1.05rem;
-        text-align: center;
-        word-break: break-word;
-      }
+      .fc .fc-toolbar-title { font-size: 0.95rem; }
+      .fc .fc-button { font-size: 0.7rem; padding: 0.28rem 0.5rem; }
       .fc .fc-daygrid-day-number {
         font-size: 0.92rem;
         padding: 6px;
@@ -203,19 +208,14 @@ var scheds = <?= json_encode($sched_res) ?>;
       .fc .fc-event-title {
         color: #1e293b !important;
         font-size: 0.95rem;
-        
       }
     }
     /* Ensure event time and title are black in week and list views */
     .fc-timeGridWeek-view .fc-event-time, 
     .fc-timeGridWeek-view .fc-event-title,
     .fc-listWeek-view .fc-event-time, 
-    .fc-listWeek-view .fc-event-title {
-      color: #111 !important;
-    }
-    .fc-list .fc-event-time, .fc-list .fc-event-title {
-      color: #111 !important;
-    }
+    .fc-listWeek-view .fc-event-title { color: #111 !important; }
+    .fc-list .fc-event-time, .fc-list .fc-event-title { color: #111 !important; }
     /* Highlight current day in week list view */
     .fc-listWeek-view .fc-list-day.fc-day-today {
       background: linear-gradient(90deg,rgba(199, 229, 248, 0.85) 0%, #f0f9ff 100%) !important;
@@ -232,8 +232,10 @@ var scheds = <?= json_encode($sched_res) ?>;
   </style>
 </head>
 
-<body class="bg-white min-h-screen flex flex-col items-center justify-start py-10 px-4">
-  <div id="calendar" class="relative z-10 w-full max-w-6xl bg-white p-4 rounded shadow"></div>
+<body>
+  <div id="calendar-wrapper">
+    <div id="calendar" class="relative z-10"></div>
+  </div>
 
   <!-- Event Details Modal -->
   <div class="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center hidden" id="event-details-modal">
@@ -337,6 +339,8 @@ if (isset($conn)) $conn->close();
           center: 'title',
           right: 'dayGridMonth,timeGridWeek,timeGridDay,listMonth'
         },
+        height: '100%',
+        expandRows: true,
         selectable: true,
         themeSystem: 'standard',
         events: events,
@@ -368,31 +372,15 @@ if (isset($conn)) $conn->close();
           $('#start').text(event.sdate);
           // Set the view details link
           $('#view-details-link').attr('href', '../view_case_details.php?id=' + event.Case_ID);
-          $('#reschedule').attr('data-id', info.event.id);
-          $('#delete').attr('data-id', info.event.id);
           $('#event-details-modal').removeClass('hidden');
         },
         editable: false
       });
 
       calendar.render();
+      // Ensure full height after initial paint
+      setTimeout(()=>calendar.updateSize(),50);
 
-      // Reschedule
-      $('#reschedule').click(function () {
-        const id = $(this).attr('data-id');
-        window.top.location.href = `../reschedule_hearing.php?id=${id}`;
-      });
-
-      // Delete
-      $('#delete').on('click', function () {
-        const id = $(this).attr('data-id');
-        if (scheds[id]) {
-          const confirmDelete = confirm('Are you sure you want to delete this hearing?');
-          if (confirmDelete) {
-            window.location.href = `delete_schedule.php?id=${id}`;
-          }
-        }
-      });
     });
 
     function closeModal() {

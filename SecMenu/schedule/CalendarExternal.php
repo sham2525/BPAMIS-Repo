@@ -147,6 +147,8 @@ $cases_json = json_encode($cases);
 <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
+<!-- Icons for toolbar buttons -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
 
 <style>
     body {
@@ -166,21 +168,22 @@ $cases_json = json_encode($cases);
       box-shadow: 0 16px 48px 0 rgba(31, 38, 135, 0.18);
       transform: translateY(-4px) scale(1.01);
     }
+    /* Compact toolbar title (match resident calendar) */
     .fc .fc-toolbar-title {
-      font-weight: 800;
-      font-size: 1.5rem;
+      font-weight: 700;
+      font-size: 1.05rem;
       color: #0281d4;
-      letter-spacing: 0.5px;
+      letter-spacing: .4px;
       display: flex;
       align-items: center;
-      gap: 0.5em;
+      gap: .4em;
     }
       .fc .fc-button { 
         box-shadow: none !important; 
-        padding: .30rem .6rem; 
+        padding: .30rem .65rem; 
         border-radius: 7px !important; 
         font-weight: 600; 
-        font-size: .75rem; 
+        font-size: .78rem; 
         line-height: 1; 
         transition: all .18s; 
         text-transform: capitalize; 
@@ -477,6 +480,22 @@ $cases_json = json_encode($cases);
       transform: scale(1.1);
       box-shadow: 0 6px 20px rgba(239, 68, 68, 0.3);
     }
+    
+    /* Toolbar Layout: single row grid (left nav, center title, right view buttons) */
+    .fc .fc-toolbar.fc-header-toolbar { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; column-gap:.75rem; width:100%; }
+    .fc .fc-toolbar { flex-wrap:nowrap; }
+    .fc .fc-toolbar-chunk:nth-child(1){ justify-self:start; display:flex; align-items:center; }
+    .fc .fc-toolbar-chunk:nth-child(2){ justify-self:center; text-align:center; }
+    .fc .fc-toolbar-chunk:nth-child(3){ justify-self:end; display:flex; justify-content:flex-end; align-items:center; }
+    .fc .fc-prev-button,.fc .fc-next-button{ position:relative; }
+    .fc .fc-toolbar-chunk:nth-child(3) .fc-button-group{ flex-wrap:nowrap; }
+    @media (max-width:480px){
+      .fc .fc-toolbar.fc-header-toolbar { grid-template-columns:1fr 1fr; grid-auto-rows:auto; row-gap:.4rem; }
+      .fc .fc-toolbar-chunk:nth-child(1){ order:1; }
+      .fc .fc-toolbar-chunk:nth-child(2){ order:2; grid-column:1 / span 2; }
+      .fc .fc-toolbar-chunk:nth-child(3){ order:3; }
+    }
+    
 </style>
 </head>
 <body class="bg-white min-h-screen flex flex-col items-center justify-start py-10 px-4">
@@ -538,7 +557,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     const calendarEl = document.getElementById('calendar');
-    const calendar = new FullCalendar.Calendar(calendarEl, {
+  const calendar = new FullCalendar.Calendar(calendarEl, {
         eventDidMount: function(info) {
             if(info.event.extendedProps.type === 'hearing') {
                 const timeEl = info.el.querySelector('.fc-event-time');
@@ -546,12 +565,12 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         },
         initialView: 'dayGridMonth',
-        headerToolbar: {
+    headerToolbar: {
             left: 'prev,next',
             center: 'title',
             right: 'dayGridMonth,timeGridWeek,listMonth'
         },
-    views: { timeGridWeek:{ buttonText:'' }, listMonth:{ buttonText:'' } },
+  views: { dayGridMonth:{ buttonText:'Month' }, timeGridWeek:{ buttonText:'Week' }, listMonth:{ buttonText:'List' } },
         events: fcEvents,
         height: 650,
         eventClick: function(info) {
@@ -615,20 +634,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }, 50);
         }
     });
-    // After init, render then swap view button labels for icons
-    applyViewIcons();
-
+    // Render calendar (no icon injection; show text labels)
     calendar.render();
-      function applyViewIcons(){
-        const monthBtn = document.querySelector('.fc-dayGridMonth-button');
-        const weekBtn = document.querySelector('.fc-timeGridWeek-button');
-        const listBtn = document.querySelector('.fc-listMonth-button');
-        if(monthBtn && !monthBtn.dataset.iconized){ monthBtn.innerHTML = '<i class="fa-solid fa-calendar-days"></i>'; monthBtn.title='Month'; monthBtn.dataset.iconized='1'; }
-        if(weekBtn && !weekBtn.dataset.iconized){ weekBtn.innerHTML = '<i class="fa-solid fa-calendar-week"></i>'; weekBtn.title='Week'; weekBtn.dataset.iconized='1'; }
-        if(listBtn && !listBtn.dataset.iconized){ listBtn.innerHTML = '<i class="fa-solid fa-list"></i>'; listBtn.title='List'; listBtn.dataset.iconized='1'; }
-      }
-      applyViewIcons();
-      calendar.on('datesSet', applyViewIcons);
 
     const toolbar = document.querySelector('.fc-toolbar'); 
     const extras = document.createElement('div');
@@ -704,8 +711,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
    
     
-    // Insert legend after the calendar
-    calendarEl.parentNode.insertBefore(legendContainer, calendarEl.nextSibling);
+  // Note: legend removed; no undefined legendContainer insertion
 
     function getStatusClass(status) {
         if (!status) return 'bg-gray-100 text-gray-800';
@@ -718,7 +724,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return 'bg-gray-100 text-gray-800';
     }
 
-    // Modal close functionality
+  // Modal close functionality
     const modalClose = document.getElementById('modalClose');
     const eventModal = document.getElementById('eventModal');
     
@@ -763,6 +769,38 @@ document.addEventListener('DOMContentLoaded', function() {
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#039;");
     }
+    // Removed icon injection and toolbar observer to keep textual labels
+
+    // Responsive toolbar tweaks (match resident)
+    function adjustCalendarToolbar(){
+      const w = window.innerWidth;
+      const titleEl = document.querySelector('.fc-toolbar-title');
+      if (titleEl) {
+        if (!titleEl.dataset.full) { titleEl.dataset.full = titleEl.textContent.trim(); }
+        const full = titleEl.dataset.full;
+        if (w < 420) {
+          titleEl.textContent = full.length > 20 ? full.slice(0, 17) + '…' : full;
+        } else if (w < 560) {
+          titleEl.textContent = full.length > 28 ? full.slice(0, 25) + '…' : full;
+        } else {
+          titleEl.textContent = full;
+        }
+      }
+      const navBtns = document.querySelectorAll('.fc-prev-button, .fc-next-button');
+      navBtns.forEach(btn => {
+        if (w < 420) { btn.style.padding = '.20rem .45rem'; btn.style.fontSize = '.65rem'; }
+        else if (w < 560) { btn.style.padding = '.24rem .5rem'; btn.style.fontSize = '.7rem'; }
+        else if (w < 768) { btn.style.padding = '.26rem .55rem'; btn.style.fontSize = '.72rem'; }
+        else { btn.style.padding = '.28rem .6rem'; btn.style.fontSize = '.75rem'; }
+      });
+    }
+    adjustCalendarToolbar();
+    window.addEventListener('resize', () => {
+      if (window.__fcTbRaf) cancelAnimationFrame(window.__fcTbRaf);
+      window.__fcTbRaf = requestAnimationFrame(adjustCalendarToolbar);
+    });
+    calendar.on('datesSet', adjustCalendarToolbar);
+
 });
 </script>
 </body>

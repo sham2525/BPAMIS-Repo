@@ -1,10 +1,15 @@
 <?php
 include '../server/server.php';
 
-if (!isset($_SESSION['official_id'])) {
-    $notif_count = 0;
-} else {
-    $luponId = $_SESSION['official_id'];
+// Ensure session is started (in case parent didn't start it)
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+$notif_count = 0; // default
+
+if (!empty($_SESSION['official_id'])) {
+    $luponId = (int)$_SESSION['official_id'];
 
     $sql = "SELECT COUNT(*) AS count 
             FROM notifications 
@@ -12,17 +17,25 @@ if (!isset($_SESSION['official_id'])) {
               AND lupon_id = ? 
               AND type IN ('Case', 'Hearing')";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $luponId);
-    $stmt->execute();
-    $result = $stmt->get_result();
 
-    $notif_count = 0;
-    if ($result && $row = $result->fetch_assoc()) {
-        $notif_count = $row['count'];
+    if ($stmt) {
+        $stmt->bind_param("i", $luponId);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if ($result && $row = $result->fetch_assoc()) {
+            $notif_count = (int)$row['count'];
+        }
+        $stmt->close();
+    } else {
+        // Fallback: if prepare fails, try a direct (still filtered) query using the lupon id
+        $lid = (int)$luponId;
+        $fallbackSql = "SELECT COUNT(*) AS count FROM notifications WHERE is_read = 0 AND lupon_id = $lid AND type IN ('Case','Hearing')";
+        if ($res = $conn->query($fallbackSql)) {
+            if ($row = $res->fetch_assoc()) {
+                $notif_count = (int)$row['count'];
+            }
+        }
     }
-    $stmt->close();
-
-   
 }
 ?>
 
@@ -45,13 +58,19 @@ if (!isset($_SESSION['official_id'])) {
                 </a>
             </li>
             <li>
+                <a href="feedback_lupon.php" class="tooltip relative group flex items-center justify-center p-3 rounded-full hover:bg-blue-50 transition-all duration-300" data-tooltip="Write Feedback">
+                    <i class="fas fa-plus-circle text-blue-500 text-lg group-hover:scale-125 group-hover:rotate-6 transition-all duration-300"></i>
+                    <span class="tooltip-text absolute -bottom-10 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">Write Feedback</span>
+                </a>
+            </li>
+            <li>
                 <a href="assigned_case.php" class="tooltip relative group flex items-center justify-center p-3 rounded-full hover:bg-blue-50 transition-all duration-300" data-tooltip="View Assigned Cases">
                     <i class="fas fa-gavel text-blue-500 text-lg group-hover:scale-125 group-hover:rotate-6 transition-all duration-300"></i>
                     <span class="tooltip-text absolute -bottom-10 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">View Assigned Cases</span>
                 </a>
             </li>
             <li>
-                <a href="view_hearings.php" class="tooltip relative group flex items-center justify-center p-3 rounded-full hover:bg-blue-50 transition-all duration-300" data-tooltip="Schedule Hearing">
+                <a href="view_hearing_calendar_lupon.php" class="tooltip relative group flex items-center justify-center p-3 rounded-full hover:bg-blue-50 transition-all duration-300" data-tooltip="Schedule Hearing">
                     <i class="fas fa-calendar-alt text-blue-500 text-lg group-hover:scale-125 group-hover:rotate-6 transition-all duration-300"></i>
                     <span class="tooltip-text absolute -bottom-10 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">Hearings</span>
                 </a>
@@ -121,11 +140,11 @@ if (!isset($_SESSION['official_id'])) {
                 </div>
                 <span class="text-xs font-medium">Home</span>
             </a>
-            <a href="add_complaints.php" class="w-24 h-24 flex flex-col items-center justify-center rounded-xl text-gray-700 hover:bg-blue-50 hover-float transition-all">
+            <a href="feedback_lupon.php" class="w-24 h-24 flex flex-col items-center justify-center rounded-xl text-gray-700 hover:bg-blue-50 hover-float transition-all">
                 <div class="w-14 h-14 bg-blue-100 rounded-full flex items-center justify-center mb-2 shadow-sm">
                     <i class="fas fa-plus-circle text-blue-600 text-xl"></i>
                 </div>
-                <span class="text-xs font-medium">Add Complaint</span>
+                <span class="text-xs font-medium">Write Feedback</span>
             </a>
             <a href="view_complaints.php" class="w-24 h-24 flex flex-col items-center justify-center rounded-xl text-gray-700 hover:bg-blue-50 hover-float transition-all">
                 <div class="w-14 h-14 bg-blue-100 rounded-full flex items-center justify-center mb-2 shadow-sm">
@@ -139,7 +158,7 @@ if (!isset($_SESSION['official_id'])) {
                 </div>
                 <span class="text-xs font-medium">Cases</span>
             </a>
-            <a href="appoint_hearing.php" class="w-24 h-24 flex flex-col items-center justify-center rounded-xl text-gray-700 hover:bg-blue-50 hover-float transition-all">
+            <a href="view_hearing_calendar.php" class="w-24 h-24 flex flex-col items-center justify-center rounded-xl text-gray-700 hover:bg-blue-50 hover-float transition-all">
                 <div class="w-14 h-14 bg-blue-100 rounded-full flex items-center justify-center mb-2 shadow-sm">
                     <i class="fas fa-calendar-alt text-blue-600 text-xl"></i>
                 </div>

@@ -7,6 +7,7 @@ if($conn->connect_error){ die("Connection failed: ".$conn->connect_error); }
 $complaint_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 if($complaint_id<=0){ echo "Invalid complaint."; exit; }
 $editing = isset($_GET['edit']);
+$error = '';
 
 // Fetch complaint and complainant info
 $sql = "SELECT c.*, r.First_Name Res_First_Name, r.Last_Name Res_Last_Name, e.First_Name Ext_First_Name, e.Last_Name Ext_Last_Name
@@ -20,6 +21,16 @@ $complaint = $res->fetch_assoc();
 
 $is_case = $conn->query("SELECT 1 FROM CASE_INFO WHERE Complaint_ID=$complaint_id LIMIT 1")->num_rows>0;
 $is_rejected = strtolower($complaint['Status'])==='rejected';
+
+// Existing case type (if CASE_INFO has Case_Type column)
+$existing_case_type = null;
+if($is_case){
+    $colCheck = $conn->query("SHOW COLUMNS FROM CASE_INFO LIKE 'Case_Type'");
+    if($colCheck && $colCheck->num_rows>0){
+        $ct = $conn->query("SELECT Case_Type FROM CASE_INFO WHERE Complaint_ID=$complaint_id ORDER BY Case_ID DESC LIMIT 1");
+        if($ct && $ct->num_rows>0){ $existing_case_type = $ct->fetch_assoc()['Case_Type'] ?? null; }
+    }
+}
 
 // Actions
 if($_SERVER['REQUEST_METHOD']==='POST'){
@@ -45,14 +56,45 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 }
                 header("Location: view_complaint_details.php?id=$complaint_id"); exit;
         }
-        if(isset($_POST['validate_case']) && !$is_case){
+    if(isset($_POST['validate_case']) && !$is_case){
+        $decision = $_POST['validate_decision'] ?? '';
+        if($decision !== 'yes'){
+            $error = 'Please select Yes to validate this complaint as a case.';
+        } else {
+            $case_type = trim($_POST['case_type'] ?? '');
+            $allowed_types = ['Civil','Criminal','Blotter'];
+            if(!in_array($case_type, $allowed_types, true)){
+                $error = 'Please choose a valid case type (Civil, Criminal, or Blotter).';
+            } else {
                 $date_opened = date('Y-m-d');
-                $conn->query("INSERT INTO CASE_INFO (Complaint_ID,Case_Status,Date_Opened) VALUES ($complaint_id,'Open','$date_opened')");
-                $conn->query("UPDATE COMPLAINT_INFO SET Status='IN CASE' WHERE Complaint_ID=$complaint_id");
+                $case_type_esc = $conn->real_escape_string($case_type);
+                $hasCaseType = false;
+                $chk = $conn->query("SHOW COLUMNS FROM CASE_INFO LIKE 'Case_Type'");
+                if($chk && $chk->num_rows>0){ $hasCaseType = true; }
+                // Map selection to COMPLAINT_INFO.case_type values: 'civil case', 'criminal case', 'blotter'
+                $ciTypeVal = '';
+                $lc = strtolower($case_type);
+                if($lc === 'civil') $ciTypeVal = 'civil case';
+                elseif($lc === 'criminal') $ciTypeVal = 'criminal case';
+                else $ciTypeVal = 'blotter';
+                $ciTypeEsc = $conn->real_escape_string($ciTypeVal);
+                $hasCIType = false; $tchk = $conn->query("SHOW COLUMNS FROM COMPLAINT_INFO LIKE 'case_type'"); if($tchk && $tchk->num_rows>0){ $hasCIType = true; }
+                if($hasCaseType){
+                    $conn->query("INSERT INTO CASE_INFO (Complaint_ID,Case_Status,Case_Type,Date_Opened) VALUES ($complaint_id,'Open','$case_type_esc','$date_opened')");
+                } else {
+                    $conn->query("INSERT INTO CASE_INFO (Complaint_ID,Case_Status,Date_Opened) VALUES ($complaint_id,'Open','$date_opened')");
+                }
+                if($hasCIType){
+                    $conn->query("UPDATE COMPLAINT_INFO SET Status='IN CASE', case_type='$ciTypeEsc' WHERE Complaint_ID=$complaint_id");
+                } else {
+                    $conn->query("UPDATE COMPLAINT_INFO SET Status='IN CASE' WHERE Complaint_ID=$complaint_id");
+                }
                 $cr=$conn->query("SELECT Resident_ID, External_Complainant_ID FROM COMPLAINT_INFO WHERE Complaint_ID=$complaint_id");
-                if($cr&&$cr->num_rows>0){ $row=$cr->fetch_assoc(); $rid=$row['Resident_ID']; $eid=$row['External_Complainant_ID']; $title='Complaint Converted to Case'; $msg="Your complaint with ID #$complaint_id has been validated and is now an official case."; $now=date('Y-m-d H:i:s'); $type='Case'; if(!empty($rid)) $conn->query("INSERT INTO notifications (resident_id,title,message,type,is_read,created_at) VALUES ($rid,'$title','$msg','$type',0,'$now')"); elseif(!empty($eid)) $conn->query("INSERT INTO notifications (external_complaint_id,title,message,type,is_read,created_at) VALUES ($eid,'$title','$msg','$type',0,'$now')"); }
+                if($cr&&$cr->num_rows>0){ $row=$cr->fetch_assoc(); $rid=$row['Resident_ID']; $eid=$row['External_Complainant_ID']; $title='Complaint Converted to Case'; $msg="Your complaint with ID #$complaint_id has been validated as a $case_type case and is now an official case."; $now=date('Y-m-d H:i:s'); $type='Case'; if(!empty($rid)) $conn->query("INSERT INTO notifications (resident_id,title,message,type,is_read,created_at) VALUES ($rid,'$title','$msg','$type',0,'$now')"); elseif(!empty($eid)) $conn->query("INSERT INTO notifications (external_complaint_id,title,message,type,is_read,created_at) VALUES ($eid,'$title','$msg','$type',0,'$now')"); }
                 header("Location: view_complaints.php?success=validated"); exit;
+            }
         }
+    }
         if(isset($_POST['reject_complaint']) && !$is_case){
                 $conn->query("UPDATE COMPLAINT_INFO SET Status='Rejected' WHERE Complaint_ID=$complaint_id");
                 $cr=$conn->query("SELECT Resident_ID, External_Complainant_ID FROM COMPLAINT_INFO WHERE Complaint_ID=$complaint_id");
@@ -99,6 +141,9 @@ $complainant_name = !empty($complaint['Res_First_Name']) ? $complaint['Res_First
     <?php include 'sidebar_.php'; ?>
     <?php $status=strtoupper(trim($complaint['Status'])); $statusStyles=['PENDING'=>'bg-amber-50 text-amber-600 border border-amber-200','IN CASE'=>'bg-sky-50 text-sky-600 border border-sky-200','REJECTED'=>'bg-rose-50 text-rose-600 border border-rose-200','RESOLVED'=>'bg-emerald-50 text-emerald-600 border border-emerald-200']; $statusClass=$statusStyles[$status]??'bg-gray-100 text-gray-600 border border-gray-200'; ?>
     <main class="relative z-10 max-w-5xl mx-auto px-4 md:px-8 pt-10 pb-24 animate-fade-in">
+        <?php if(!empty($error)): ?>
+            <div class="mb-6 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3 text-sm shadow-sm"><i class="fa fa-circle-exclamation mr-2"></i><?= htmlspecialchars($error) ?></div>
+        <?php endif; ?>
         <div class="mb-8 flex items-center gap-3">
             <a href="view_complaints.php" class="group inline-flex items-center text-sm font-medium text-primary-700 hover:text-primary-900 transition">
                 <span class="inline-flex h-8 w-8 items-center justify-center rounded-md bg-white/70 shadow ring-1 ring-primary-100 group-hover:bg-primary-50"><i class="fa fa-arrow-left"></i></span>
@@ -120,6 +165,7 @@ $complainant_name = !empty($complaint['Res_First_Name']) ? $complaint['Res_First
                         <span class="bg-clip-text text-transparent bg-gradient-to-r from-primary-700 to-primary-500">Complaint #<?= htmlspecialchars($complaint['Complaint_ID']) ?></span>
                         <span class="inline-flex items-center gap-1 text-xs font-medium px-3 py-1 rounded-full <?= $statusClass ?> shadow-sm"><i class="fa fa-circle text-[8px]"></i> <?= htmlspecialchars($complaint['Status']) ?></span>
                         <?php if($is_case): ?><span class="inline-flex items-center gap-1 text-xs font-medium px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 shadow-sm"><i class="fa fa-gavel"></i> Case Opened</span><?php endif; ?>
+                        <?php if($is_case && !empty($existing_case_type)): ?><span class="inline-flex items-center gap-1 text-xs font-medium px-3 py-1 rounded-full bg-primary-50 text-primary-700 border border-primary-200 shadow-sm"><i class="fa fa-tags"></i> Type: <?= htmlspecialchars($existing_case_type) ?></span><?php endif; ?>
                         <?php if($is_rejected): ?><span class="inline-flex items-center gap-1 text-xs font-medium px-3 py-1 rounded-full bg-rose-50 text-rose-600 border border-rose-200 shadow-sm"><i class="fa fa-ban"></i> Rejected</span><?php endif; ?>
                     </h1>
                     <div class="mt-3 flex flex-wrap items-center gap-4 text-sm text-gray-500">
@@ -167,8 +213,32 @@ $complainant_name = !empty($complaint['Res_First_Name']) ? $complaint['Res_First
                         </div>
                     </div>
                 </div>
-                <div class="pt-4 border-t border-dashed border-primary-200/60 flex flex-wrap items-center justify-between gap-4">
-                    <div class="flex flex-wrap gap-2">
+                <div class="pt-4 border-t border-dashed border-primary-200/60 flex flex-col gap-4">
+                    <?php if(!$is_case && !$is_rejected): ?>
+                    <div class="rounded-xl border bg-white/70 border-gray-200 p-4 shadow-sm">
+                        <p class="field-label mb-2">Validation Decision</p>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <button id="btnValidate" type="button" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow text-sm font-medium transition"><i class="fa fa-check"></i> Validate</button>
+                            <form method="POST" class="inline-flex" onsubmit="return confirm('Reject this complaint? This action cannot be undone.');">
+                                <button type="submit" name="reject_complaint" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow text-sm font-medium transition"><i class="fa fa-ban"></i> Reject</button>
+                            </form>
+                        </div>
+                        <form id="convertForm" method="POST" class="mt-3 flex flex-col sm:flex-row sm:items-center gap-3 hidden" onsubmit="return confirm('Convert this complaint into a case?');">
+                            <input type="hidden" name="validate_decision" value="yes" />
+                            <div class="sm:inline-flex items-center gap-2">
+                                <select name="case_type" id="caseTypeSelect" required class="px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white/80">
+                                    <option value="">Select Case Type</option>
+                                    <option value="Civil">Civil</option>
+                                    <option value="Criminal">Criminal</option>
+                                    <option value="Blotter">Blotter</option>
+                                </select>
+                            </div>
+                            <button id="btnConvert" type="submit" name="validate_case" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow text-sm font-medium transition disabled:opacity-60 disabled:cursor-not-allowed" disabled><i class="fa fa-gavel"></i> Convert to Case</button>
+                        </form>
+                    </div>
+                    <?php endif; ?>
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <div class="flex flex-wrap gap-2">
                         <a href="view_complaints.php" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/80 hover:bg-white text-primary-700 border border-primary-200 shadow-sm text-sm font-medium transition"><i class="fa fa-arrow-left"></i> Back</a>
                         <?php if(!$is_case && !$editing && !$is_rejected): ?>
                             <a href="?id=<?= $complaint_id ?>&edit=1" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white shadow text-sm font-medium transition"><i class="fa fa-pen"></i> Validate / Edit</a>
@@ -177,12 +247,7 @@ $complainant_name = !empty($complaint['Res_First_Name']) ? $complaint['Res_First
                             <button type="submit" name="update_complaint" form="editForm" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white shadow text-sm font-medium transition"><i class="fa fa-save"></i> Save Changes</button>
                         <?php endif; ?>
                         <?php if(!$is_case && !$editing && !$is_rejected): ?>
-                            <form method="POST" class="inline-flex" onsubmit="return confirm('Convert this complaint into a case?');">
-                                <button type="submit" name="validate_case" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow text-sm font-medium transition"><i class="fa fa-gavel"></i> Convert to Case</button>
-                            </form>
-                            <form method="POST" class="inline-flex" onsubmit="return confirm('Reject this complaint? This action cannot be undone.');">
-                                <button type="submit" name="reject_complaint" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow text-sm font-medium transition"><i class="fa fa-ban"></i> Reject</button>
-                            </form>
+                            <!-- Rejection handled above in Validation Decision block -->
                         <?php endif; ?>
                         <?php if($is_case): ?>
                             <span class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium cursor-not-allowed opacity-80"><i class="fa fa-check"></i> Already a Case</span>
@@ -203,7 +268,25 @@ $complainant_name = !empty($complaint['Res_First_Name']) ? $complaint['Res_First
             c.appendChild(i); setupAutocomplete();
         }
         function setupAutocomplete(){ if(typeof $==='undefined'||!$.fn.autocomplete) return; $('.respondent-input').autocomplete({source:'search_residents.php',minLength:1}); }
-        $(document).ready(setupAutocomplete);
+        $(document).ready(function(){
+            setupAutocomplete();
+            const btnValidate = document.getElementById('btnValidate');
+            const convertForm = document.getElementById('convertForm');
+            const caseTypeSelect = document.getElementById('caseTypeSelect');
+            const btnConvert = document.getElementById('btnConvert');
+            if(btnValidate && convertForm){
+                btnValidate.addEventListener('click', function(){
+                    convertForm.classList.remove('hidden');
+                    caseTypeSelect?.focus();
+                    if(btnConvert) btnConvert.disabled = (caseTypeSelect?.value==='');
+                });
+            }
+            if(caseTypeSelect && btnConvert){
+                caseTypeSelect.addEventListener('change', function(){
+                    btnConvert.disabled = (this.value==='');
+                });
+            }
+        });
     </script>
     <?php $conn->close(); ?>
 </body>
