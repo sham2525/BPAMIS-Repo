@@ -1115,7 +1115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reg_email'])) {
                                 <input type="password" name="reg_pass_mobile" id="reg_pass_mobile" class="input-field"
                                     placeholder="Password" required>
                                 <button type="button" class="password-toggle hover:text-gray-600 focus:outline-none"
-                                    onclick="togglePassword('reg_pass', this)" aria-label="Toggle password visibility">
+                                    onclick="togglePassword('reg_pass_mobile', this)" aria-label="Toggle password visibility">
                                     <i class="fas fa-eye text-gray-400"></i>
                                 </button>
                             </div>
@@ -1125,7 +1125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reg_email'])) {
                                 <input type="password" name="reg_pass_confirm_mobile" id="reg_pass_confirm_mobile"
                                     class="input-field" placeholder="Confirm Password" required>
                                 <button type="button" class="password-toggle hover:text-gray-600 focus:outline-none"
-                                    onclick="togglePassword('reg_pass_confirm', this)" aria-label="Toggle password visibility">
+                                    onclick="togglePassword('reg_pass_confirm_mobile', this)" aria-label="Toggle password visibility">
                                     <i class="fas fa-eye text-gray-400"></i>
                                 </button>
                             </div>
@@ -1688,22 +1688,143 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reg_email'])) {
          const password = document.getElementById('reg_pass');
          const confirmPassword = document.getElementById('reg_pass_confirm');
          const mismatchMsg = document.getElementById('passwordMismatchMsg');
-         const submitBtn = document.getElementById('submitBtn');
+         // Collect all submit buttons (desktop + mobile) sharing name="Signup"
+         const submitButtons = Array.from(document.querySelectorAll('button[name="Signup"]'));
+            // Mobile fields (may not exist on desktop view)
+            const passwordMobile = document.getElementById('reg_pass_mobile');
+            const confirmPasswordMobile = document.getElementById('reg_pass_confirm_mobile');
 
-            function validatePasswords() {
-                if (password.value && confirmPassword.value && password.value !== confirmPassword.value) {
-                    mismatchMsg.classList.remove('hidden');
-                    submitBtn.disabled = true;
-                    submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            // Ensure mismatch message elements exist (desktop)
+            let desktopMismatch = mismatchMsg;
+            if (!desktopMismatch && confirmPassword) {
+                desktopMismatch = document.createElement('div');
+                desktopMismatch.id = 'passwordMismatchMsg';
+                    // Place after input-group to avoid shifting icons
+                    const container = confirmPassword.parentElement;
+                    container.parentElement.insertBefore(desktopMismatch, container.nextSibling);
+            }
+            if (desktopMismatch) {
+                    desktopMismatch.className = 'mt-2 hidden';
+            }
+
+            // Mobile mismatch message element
+            let mobileMismatch = document.getElementById('passwordMismatchMsgMobile');
+            if (!mobileMismatch && confirmPasswordMobile) {
+                mobileMismatch = document.createElement('div');
+                mobileMismatch.id = 'passwordMismatchMsgMobile';
+                    const mContainer = confirmPasswordMobile.parentElement;
+                    mContainer.parentElement.insertBefore(mobileMismatch, mContainer.nextSibling);
+            }
+            if (mobileMismatch) {
+                    mobileMismatch.className = 'mt-2 hidden';
+            }
+
+                                                function renderAlert(msgEl, message, type) {
+                                                        if (!msgEl) return;
+                                                        const isError = type === 'error';
+                                                        const animationClass = isError ? '' : 'animate-slide-in fade-enter-active';
+                                                        msgEl.innerHTML = `
+                                                            <div class="flex items-start gap-2 px-3 py-2 rounded-lg border shadow-sm text-sm ${animationClass}
+                                                                ${isError ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}">
+                                                                 <span class="mt-0.5 text-base">
+                                                                        <i class="fas ${isError ? 'fa-exclamation-circle text-red-500' : 'fa-check-circle text-green-500'}"></i>
+                                                                 </span>
+                                                                 <span>${message}</span>
+                                                            </div>`;
+                                                        msgEl.classList.remove('hidden');
+                                                        msgEl.setAttribute('role','alert');
+                                                        msgEl.setAttribute('aria-live','polite');
+                                                }
+
+                        function setInvalid(el, msgEl, message) {
+                                if (!el || !msgEl) return;
+                                el.classList.add('border-red-500','bg-red-50');
+                                el.classList.remove('border-green-500','bg-green-50');
+                                renderAlert(msgEl, message, 'error');
+                        }
+
+            function clearState(el, msgEl) {
+                if (!el || !msgEl) return;
+                el.classList.remove('border-red-500','bg-red-50','border-green-500','bg-green-50');
+                msgEl.innerHTML = '';
+                msgEl.classList.add('hidden');
+                msgEl.removeAttribute('role');
+                msgEl.removeAttribute('aria-live');
+            }
+
+            function setValid(el, msgEl) {
+                if (!el || !msgEl) return;
+                el.classList.remove('border-red-500','bg-red-50');
+                el.classList.add('border-green-500','bg-green-50');
+                renderAlert(msgEl, 'Passwords match', 'success');
+            }
+
+            function validatePair(primary, confirm, msgEl) {
+                if (!confirm || !msgEl) return false;
+                if (!primary.value && !confirm.value) {
+                    clearState(confirm, msgEl);
+                    return false;
+                }
+                if (!confirm.value) {
+                    clearState(confirm, msgEl);
+                    return false;
+                }
+                if (primary.value !== confirm.value) {
+                    setInvalid(confirm, msgEl, 'Passwords do not match');
+                    return false;
                 } else {
-                    mismatchMsg.classList.add('hidden');
-                    submitBtn.disabled = false;
-                    submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    setValid(confirm, msgEl);
+                    return true;
                 }
             }
 
-           password.addEventListener('input', validatePasswords);
-           confirmPassword.addEventListener('input', validatePasswords);
+            function validateAll() {
+                const desktopOk = validatePair(password, confirmPassword, desktopMismatch);
+                const mobileOk = validatePair(passwordMobile, confirmPasswordMobile, mobileMismatch);
+
+                // For each submit button, evaluate only the fields within its own (closest) form
+                submitButtons.forEach(btn => {
+                    if (!btn) return;
+                    const form = btn.closest('form');
+                    if (!form) return;
+
+                    // Gather required inputs inside this form
+                    const requiredInputs = Array.from(form.querySelectorAll('input[required]'));
+                    // Separate text/email/password vs checkboxes
+                    const textInputsEmpty = requiredInputs.filter(i => i.type !== 'checkbox').some(i => !i.value.trim());
+                    const uncheckedBoxes = requiredInputs.filter(i => i.type === 'checkbox').some(i => !i.checked);
+
+                    // Find password pair inside form (either desktop or mobile naming)
+                    const p = form.querySelector('input[name="reg_pass"], input[name="reg_pass_mobile"]');
+                    const c = form.querySelector('input[name="reg_pass_confirm"], input[name="reg_pass_confirm_mobile"]');
+                    let passwordsOk = true;
+                    if (p && c) {
+                        if (!p.value || !c.value || p.value !== c.value) {
+                            passwordsOk = false;
+                        }
+                    }
+
+                    // If this is the desktop form, use desktopOk for mismatch styling logic else mobileOk
+                    // (Already applied above via validatePair)
+
+                    const disable = textInputsEmpty || uncheckedBoxes || !passwordsOk;
+                    btn.disabled = disable;
+                    btn.classList.toggle('opacity-50', disable);
+                    btn.classList.toggle('cursor-not-allowed', disable);
+                });
+            }
+
+            [password, confirmPassword, passwordMobile, confirmPasswordMobile].forEach(el => {
+                if (!el) return;
+                el.addEventListener('input', validateAll);
+            });
+
+            // Also watch required text & checkbox inputs for enabling/disabling logic
+            const allRequired = Array.from(document.querySelectorAll('form input[required]'));
+            allRequired.forEach(inp => inp.addEventListener('input', validateAll));
+            allRequired.forEach(inp => inp.addEventListener('change', validateAll));
+
+            validateAll();
 
 
 
@@ -1829,6 +1950,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reg_email'])) {
 
     // Document ready event listener
     document.addEventListener('DOMContentLoaded', function () {
+        // Hook Terms & Privacy links (desktop + mobile) to open modal
+        const termSelectors = ["a#termsLink", "a[href='#'][class*='Terms']", "a[href='javascript:void(0)']#termsLink"]; // primary explicit selector
+        const privacySelectors = ["a#privacyLink", "a[href='#'][class*='Privacy']", "a[href='javascript:void(0)']#privacyLink"]; // primary explicit selector
+
+        function bindModalLink(selectors, sectionId){
+            selectors.forEach(sel => {
+                document.querySelectorAll(sel).forEach(el => {
+                    el.addEventListener('click', function(e){
+                        e.preventDefault();
+                        openLegalModal(e, sectionId);
+                    });
+                });
+            });
+        }
+
+        bindModalLink(["#termsLink"], 'terms-of-service');
+        bindModalLink(["#privacyLink"], 'privacy-policy');
+
+        // If links exist inside the desktop form without IDs (fallback), attempt text-based binding
+        document.querySelectorAll('a').forEach(a => {
+            const text = (a.textContent || '').toLowerCase();
+            if(text.includes('terms and conditions') && !a.id){
+                a.addEventListener('click', e => { e.preventDefault(); openLegalModal(e, 'terms-of-service'); });
+            }
+            if(text.includes('privacy policy') && !a.id){
+                a.addEventListener('click', e => { e.preventDefault(); openLegalModal(e, 'privacy-policy'); });
+            }
+        });
+
         if (document.getElementById('legalModal')) {
             // Add click listener on the backdrop
             const backdrop = document.querySelector('#legalModal .fixed.inset-0.bg-black');

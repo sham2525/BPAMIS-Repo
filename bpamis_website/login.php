@@ -547,18 +547,22 @@
                         <form id="loginFormMobile" method="POST" action = "../controllers/logindb.php" class="space-y-6">
                             <div class="input-group form-field mobile-fade-in-delay-1">
                                 <i class="fas fa-envelope"></i>
-                                <input type="input" name="login_user" id="login_user" class="input-field"
+                                <input type="input" name="login_user" id="login_user_mobile" class="input-field"
                                     placeholder="Enter your username" required>
                             </div>
 
                             <div class="input-group form-field mobile-fade-in-delay-2">
                                 <i class="fas fa-lock"></i>
-                                <input type="password" name="login_pass" id="login_pass" class="input-field"
+                                <input type="password" name="login_pass" id="login_pass_mobile" class="input-field"
                                     placeholder="••••••••" required>
                                 <button type="button" class="password-toggle hover:text-gray-600 focus:outline-none"
-                                    onclick="togglePassword('login_pass', this)" aria-label="Toggle password visibility">
+                                    onclick="togglePassword('login_pass_mobile', this)" aria-label="Toggle password visibility">
                                     <i class="fas fa-eye text-gray-400"></i>
                                 </button>
+                            </div>
+                            <div id="loginErrorMobile" class="hidden mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-600 shadow-sm flex items-start gap-2">
+                                <i class="fas fa-exclamation-circle mt-0.5 text-red-500"></i>
+                                <span class="flex-1"></span>
                             </div>
 
                             <div class="flex items-center justify-between checkbox-group mobile-fade-in-delay-3">
@@ -606,6 +610,10 @@
                                 <i class="fas fa-eye text-gray-400"></i>
                             </button>
                         </div>
+                        <div id="loginError" class="hidden mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-600 shadow-sm flex items-start gap-2">
+                            <i class="fas fa-exclamation-circle mt-0.5 text-red-500"></i>
+                            <span class="flex-1"></span>
+                        </div>
 
                         <div class="flex items-center justify-between checkbox-group">
                             <label class="flex items-center">
@@ -638,22 +646,28 @@
 
 
     <script>
-     function showLoginError() {
-    const messageDiv = document.getElementById('loginMessage');
-    const form = document.getElementById('loginForm');
+      function showLoginError(isMobile = false, message = 'Invalid username or password.') {
+          const desktopErr = document.getElementById('loginError');
+          const mobileErr = document.getElementById('loginErrorMobile');
+          const target = isMobile ? mobileErr : desktopErr;
+          if (!target) return;
+          const span = target.querySelector('span');
+          if (span) span.textContent = message;
+          target.classList.remove('hidden');
+        const form = document.getElementById(isMobile ? 'loginFormMobile' : 'loginForm');
+        if (form) {
+            form.classList.add('animate-shake');
+            setTimeout(()=>form.classList.remove('animate-shake'),500);
+        }
+        const passField = document.getElementById(isMobile ? 'login_pass_mobile' : 'login_pass');
+        if (passField) passField.value='';
+        // auto-hide after delay
+        setTimeout(()=> target.classList.add('hidden'), 6000);
+    }
 
-    messageDiv.className = 'block text-center p-4 mb-4 text-red-600 bg-red-50 border border-red-200 rounded-lg';
-    messageDiv.textContent = 'Invalid username or password.';
-    form.classList.add('animate-shake');
-
-    setTimeout(() => {
-        form.classList.remove('animate-shake');
-    }, 500);
-
-    document.getElementById('login_pass').value = '';
-    setTimeout(() => {
-    messageDiv.classList.add('hidden');
-    }, 5000);
+    function clearInlineErrors() {
+        const ids = ['loginError','loginErrorMobile'];
+        ids.forEach(id=>{ const el = document.getElementById(id); if(el){ const span=el.querySelector('span'); if(span) span.textContent=''; el.classList.add('hidden');}});
     }
 
     // Password toggle function
@@ -675,8 +689,72 @@
     window.addEventListener('DOMContentLoaded', () => {
         const params = new URLSearchParams(window.location.search);
         if (params.get('login_error') === 'true') {
-            showLoginError();
+            // Assume server flagged invalid credentials; show on both for consistency
+            showLoginError(false);
+            showLoginError(true);
         }
+        // Attach client-side validation to prevent empty submits
+        const desktopForm = document.getElementById('loginForm');
+        const mobileForm = document.getElementById('loginFormMobile');
+        const desktopBtn = desktopForm ? desktopForm.querySelector('button[type="submit"]') : null;
+        const mobileBtn = mobileForm ? mobileForm.querySelector('button[type="submit"]') : null;
+
+        function updateLoginButtonState(form, btn){
+            if(!form || !btn) return;
+            const user = form.querySelector('input[name="login_user"]');
+            const pass = form.querySelector('input[name="login_pass"]');
+            const disabled = !(user && pass && user.value.trim() && pass.value.trim());
+            btn.disabled = disabled;
+            btn.classList.toggle('opacity-50', disabled);
+            btn.classList.toggle('cursor-not-allowed', disabled);
+        }
+
+        function attachInputListeners(form, btn){
+            if(!form || !btn) return;
+            form.querySelectorAll('input[name="login_user"], input[name="login_pass"]').forEach(inp => {
+                inp.addEventListener('input', ()=> updateLoginButtonState(form, btn));
+            });
+            updateLoginButtonState(form, btn);
+        }
+
+        function attachValidation(form, isMobile){
+            if(!form) return;
+            form.addEventListener('submit', (e)=>{
+                clearInlineErrors();
+                const user = form.querySelector('input[name="login_user"]');
+                const pass = form.querySelector('input[name="login_pass"]');
+                if(!user.value.trim() || !pass.value.trim()){
+                    e.preventDefault();
+                    showLoginError(isMobile, 'Username and password are required.');
+                    return;
+                }
+                // AJAX submit to avoid full page reload
+                e.preventDefault();
+                const submitBtn = form.querySelector('button[type="submit"]');
+                const originalText = submitBtn ? submitBtn.textContent : '';
+                if(submitBtn){ submitBtn.disabled = true; submitBtn.textContent = 'Logging in...'; }
+                const fd = new FormData(form);
+                fd.append('ajax','1');
+                fetch('../controllers/logindb.php', { method:'POST', body: fd })
+                    .then(r=> r.ok ? r.json() : Promise.reject(new Error('Network error')))
+                    .then(data => {
+                        if(data.success){
+                            window.location.href = data.redirect;
+                        } else {
+                            showLoginError(isMobile, data.message || 'Invalid username or password.');
+                        }
+                    })
+                    .catch(err => {
+                        console.error(err);
+                        showLoginError(isMobile, 'Login failed. Please try again.');
+                    })
+                    .finally(()=>{ if(submitBtn){ submitBtn.disabled=false; submitBtn.textContent = originalText; }});
+            });
+        }
+        attachValidation(desktopForm,false);
+        attachValidation(mobileForm,true);
+        attachInputListeners(desktopForm, desktopBtn);
+        attachInputListeners(mobileForm, mobileBtn);
     });
 
        

@@ -4,6 +4,7 @@ include '../server/server.php';
 
 $username = $_POST['login_user'] ?? '';
 $password = $_POST['login_pass'] ?? '';
+$isAjax = isset($_POST['ajax']);
 
 // First character determines role type
 $firstChar = strtoupper($username[0]);
@@ -30,7 +31,11 @@ switch ($firstChar) {
         $redirect = "../OfficialMenu/home-captain.php";
         break;
     default:
-        // Optional fallback
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success'=>false,'message'=>'Invalid credentials.']);
+            exit;
+        }
         header("Location: ../bpamis_website/login.php?login_error=true");
         exit;
 }
@@ -59,11 +64,21 @@ if ($result && $result->num_rows === 1) {
         $_SESSION['official_name'] = $user['Name'] ?? '';
     }
 
+    if ($isAjax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success'=>true,'redirect'=>$redirect]);
+        exit;
+    }
     header("Location: $redirect");
     exit;
 
     } else {
         // Wrong password
+        if ($isAjax) {
+            header('Content-Type: application/json');
+            echo json_encode(['success'=>false,'message'=>'Invalid username or password.']);
+            exit;
+        }
         header("Location: ../bpamis_website/login.php?error=invalid_password");
         exit;
     }
@@ -84,5 +99,11 @@ if ($result && $result->num_rows === 1) {
 //     header("Location: ../bpamis_website/login.php?login_error=true");
 //     exit;
 // }
+
+if ($isAjax) {
+    header('Content-Type: application/json');
+    echo json_encode(['success'=>false,'message'=>'Invalid username or password.']);
+    exit;
+}
 
 ?>
