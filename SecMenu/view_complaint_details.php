@@ -114,6 +114,27 @@ if($ar&&$ar->num_rows>0){ while($r=$ar->fetch_assoc()){ $respondents[]=$r['First
 $respondent_names = $respondents ? implode(', ',$respondents) : 'N/A';
 
 $complainant_name = !empty($complaint['Res_First_Name']) ? $complaint['Res_First_Name'].' '.$complaint['Res_Last_Name'] : (!empty($complaint['Ext_First_Name']) ? $complaint['Ext_First_Name'].' '.$complaint['Ext_Last_Name'] : 'Unknown');
+
+// Build attachments array if Attachment_Path column exists
+$attachments = [];
+if(array_key_exists('Attachment_Path', $complaint) && !empty($complaint['Attachment_Path'])){
+    $raw = $complaint['Attachment_Path'];
+    // Paths stored as semicolon-separated
+    $parts = array_filter(array_map('trim', explode(';', $raw)), function($p){ return $p !== ''; });
+    foreach($parts as $p){
+        $clean = str_replace('..','', $p); // basic traversal guard
+        $clean = str_replace('\\', '/', $clean);
+        $clean = ltrim($clean, '/');
+        // Encode each segment for safe URL usage
+        $encoded = implode('/', array_map('rawurlencode', explode('/', $clean)));
+        $attachments[] = [
+            'raw' => $clean,
+            'url' => $encoded,
+            'is_image' => (bool)preg_match('/\.(jpe?g|png|gif|webp)$/i', $clean),
+            'is_pdf' => (bool)preg_match('/\.pdf$/i', $clean)
+        ];
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -214,6 +235,40 @@ $complainant_name = !empty($complaint['Res_First_Name']) ? $complaint['Res_First
                     </div>
                 </div>
                 <div class="pt-4 border-t border-dashed border-primary-200/60 flex flex-col gap-4">
+                    <?php if(!empty($attachments)): ?>
+                    <div>
+                        <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-3">Attachments</h2>
+                        <div class="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+                            <?php foreach($attachments as $att): ?>
+                                <div class="group relative rounded-xl border bg-white/70 border-gray-200 hover:border-primary-300 hover:shadow-glow transition overflow-hidden">
+                                    <div class="aspect-video w-full bg-gray-100 flex items-center justify-center overflow-hidden">
+                                        <?php if($att['is_image']): ?>
+                                            <img src="../<?= htmlspecialchars($att['url']) ?>" alt="Attachment" class="w-full h-full object-cover object-center group-hover:scale-105 transition" />
+                                        <?php elseif($att['is_pdf']): ?>
+                                            <div class="flex flex-col items-center justify-center text-primary-600 text-sm font-medium">
+                                                <i class="fa fa-file-pdf text-3xl mb-1"></i>
+                                                PDF File
+                                            </div>
+                                        <?php else: ?>
+                                            <div class="flex flex-col items-center justify-center text-primary-600 text-sm font-medium">
+                                                <i class="fa fa-paperclip text-3xl mb-1"></i>
+                                                File
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                        <div class="flex gap-2">
+                                            <?php if($att['is_image']): ?>
+                                                <button type="button" onclick="previewImage('../<?= htmlspecialchars($att['url']) ?>')" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-primary-700 text-xs font-medium shadow-sm"><i class="fa fa-eye"></i> View</button>
+                                            <?php endif; ?>
+                                            <a href="../<?= htmlspecialchars($att['url']) ?>" download class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium shadow-sm"><i class="fa fa-download"></i> Download</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <?php endif; ?>
                     <?php if(!$is_case && !$is_rejected): ?>
                     <div class="rounded-xl border bg-white/70 border-gray-200 p-4 shadow-sm">
                         <p class="field-label mb-2">Validation Decision</p>
@@ -268,6 +323,20 @@ $complainant_name = !empty($complaint['Res_First_Name']) ? $complaint['Res_First
             c.appendChild(i); setupAutocomplete();
         }
         function setupAutocomplete(){ if(typeof $==='undefined'||!$.fn.autocomplete) return; $('.respondent-input').autocomplete({source:'search_residents.php',minLength:1}); }
+        function previewImage(src){
+            const modal=document.getElementById('imgPreviewModal');
+            const img=document.getElementById('imgPreviewTag');
+            if(!modal||!img) return;
+            img.src=src;
+            modal.classList.remove('hidden');
+            document.body.classList.add('overflow-hidden');
+        }
+        function closePreview(){
+            const modal=document.getElementById('imgPreviewModal');
+            if(!modal) return;
+            modal.classList.add('hidden');
+            document.body.classList.remove('overflow-hidden');
+        }
         $(document).ready(function(){
             setupAutocomplete();
             const btnValidate = document.getElementById('btnValidate');
@@ -288,6 +357,14 @@ $complainant_name = !empty($complaint['Res_First_Name']) ? $complaint['Res_First
             }
         });
     </script>
+    <div id="imgPreviewModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
+        <div class="relative max-w-4xl w-full">
+            <button onclick="closePreview()" class="absolute -top-4 -right-4 w-10 h-10 rounded-full bg-white text-gray-700 flex items-center justify-center shadow-lg hover:bg-primary-600 hover:text-white transition"><i class="fa fa-xmark text-lg"></i></button>
+            <div class="bg-white rounded-2xl overflow-hidden shadow-glow ring-1 ring-primary-200/40">
+                <img id="imgPreviewTag" src="" alt="Preview" class="w-full max-h-[80vh] object-contain bg-black" />
+            </div>
+        </div>
+    </div>
     <?php $conn->close(); ?>
 </body>
 </html>

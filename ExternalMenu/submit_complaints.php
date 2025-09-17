@@ -1,5 +1,134 @@
 <?php
+// External Submit Complaints (self-processing) - adds record to COMPLAINT_INFO like resident version
 session_start();
+// Redirect if not logged in (external user)
+if(!isset($_SESSION['external_id']) && !isset($_SESSION['user_id'])){ header('Location: ../bpamis_website/login.php'); exit; }
+$external_id = $_SESSION['external_id'] ?? $_SESSION['user_id'];
+
+include_once '../server/server.php'; // provides $conn
+
+// Helper for cleanup
+function clean_name($n){ return preg_replace('/[^A-Za-z0-9_.-]/','_', $n); }
+
+$external_name = '';
+if(isset($conn)){
+    if($stmt = $conn->prepare("SELECT First_Name, Middle_Name, Last_Name FROM external_complainant WHERE External_Complaint_ID = ? LIMIT 1")){
+        $stmt->bind_param('i',$external_id);
+        $stmt->execute();
+        $rs = $stmt->get_result();
+        if($rw = $rs->fetch_assoc()){
+            $parts = array_filter([$rw['First_Name']??'', $rw['Middle_Name']??'', $rw['Last_Name']??'']);
+            $external_name = trim(implode(' ', $parts));
+        }
+        $stmt->close();
+    }
+}
+
+// Process form submission
+$insert_success = false; $error_message=''; $complaint_id = null; $respondent_names=[];
+if($_SERVER['REQUEST_METHOD']==='POST'){
+    $complainant_name = trim($_POST['complainant_name'] ?? '');
+    $respondent_raw   = $_POST['respondent_name'] ?? '';
+    $incident_date    = trim($_POST['incident_date'] ?? '');
+    $incident_time    = trim($_POST['incident_time'] ?? ''); // stored? (not in schema snippet) - ignored for now
+    $description      = trim($_POST['complaint_description'] ?? '');
+
+    // Parse Tagify JSON or comma list
+    if(is_string($respondent_raw) && strlen($respondent_raw)){
+        $trimmed = ltrim($respondent_raw);
+        if(str_starts_with($trimmed,'[')){
+            $decoded = json_decode($respondent_raw,true);
+            if(is_array($decoded)){
+                foreach($decoded as $d){ if(!empty($d['value'])) $respondent_names[] = trim($d['value']); }
+            }
+        } else {
+            $respondent_names = array_filter(array_map('trim', preg_split('/\s*,\s*/',$respondent_raw)));
+        }
+    }
+
+    if($description==='' || $incident_date==='' || empty($respondent_names)){
+        $error_message = 'Please provide required fields (respondent name(s), description, incident date).';
+    } else {
+        // Derive a simple title from description
+        $complaint_title = mb_substr($description,0,60);
+        if($complaint_title==='') $complaint_title = 'Complaint '.date('Y-m-d H:i');
+
+        // Attempt to resolve first respondent ID if it matches an existing resident (optional)
+        $main_respondent_id = null;
+        if(isset($conn)){
+            if($res = $conn->query("SHOW COLUMNS FROM resident_info LIKE 'Resident_ID'")){
+                // Build map only if table exists
+                if($mapRs = $conn->query("SELECT Resident_ID, First_Name, Middle_Name, Last_Name FROM resident_info")){
+                    $nameMap=[]; while($row=$mapRs->fetch_assoc()){ $parts=array_filter([$row['First_Name']??'', $row['Middle_Name']??'', $row['Last_Name']??'']); $nameMap[strtolower(preg_replace('/\s+/',' ',trim(implode(' ',$parts))))] = (int)$row['Resident_ID']; }
+                    foreach($respondent_names as $nm){ $k=strtolower(preg_replace('/\s+/',' ',trim($nm))); if(isset($nameMap[$k])){ $main_respondent_id = $nameMap[$k]; break; } }
+                }
+            }
+        }
+
+        // Handle attachments (multi, 20MB limit)
+        $attachment_path = null; $MAX_FILE_BYTES = 20*1024*1024; $stored=[]; $oversized=[];
+        if(!empty($_FILES['complaint_attachment']['name'][0])){
+            foreach($_FILES['complaint_attachment']['name'] as $i=>$name){
+                if($_FILES['complaint_attachment']['error'][$i]===UPLOAD_ERR_OK){
+                    if($_FILES['complaint_attachment']['size'][$i] > $MAX_FILE_BYTES){ $oversized[] = $name; }
+                }
+            }
+            if(empty($oversized)){
+                $uploadDir = __DIR__.'/../uploads/'; if(!is_dir($uploadDir)) @mkdir($uploadDir,0777,true);
+                foreach($_FILES['complaint_attachment']['name'] as $i=>$name){
+                    if($_FILES['complaint_attachment']['error'][$i]===UPLOAD_ERR_OK){
+                        $safe = time().'_'.clean_name($name);
+                        $target = $uploadDir.$safe;
+                        if(move_uploaded_file($_FILES['complaint_attachment']['tmp_name'][$i], $target)){
+                            $stored[] = 'uploads/'.$safe;
+                        }
+                    }
+                }
+                if($stored) $attachment_path = implode(';',$stored);
+            } else {
+                $error_message = 'The following files exceed 20MB: '.htmlspecialchars(implode(', ',$oversized));
+            }
+        }
+
+        if($error_message===''){
+            $status='Pending';
+            // Insert into COMPLAINT_INFO using external user mapped into Resident_ID if schema requires; if an External_ID column exists, adjust as needed.
+            if(isset($conn)){
+                // Prefer external_complainant_id column; fallback to Resident_ID if external column not present
+                $useExternalCol = false;
+                if($meta = $conn->query("SHOW COLUMNS FROM COMPLAINT_INFO LIKE 'external_complainant_id'")){
+                    if($meta->num_rows>0) $useExternalCol = true; $meta->close();
+                }
+                if($useExternalCol){
+                    if($attachment_path){
+                        $stmt = $conn->prepare("INSERT INTO COMPLAINT_INFO (external_complainant_id, Respondent_ID, Complaint_Title, Complaint_Details, Date_Filed, Status, Attachment_Path) VALUES (?,?,?,?,?,?,?)");
+                        $stmt->bind_param('iisssss', $external_id, $main_respondent_id, $complaint_title, $description, $incident_date, $status, $attachment_path);
+                    } else {
+                        $stmt = $conn->prepare("INSERT INTO COMPLAINT_INFO (external_complainant_id, Respondent_ID, Complaint_Title, Complaint_Details, Date_Filed, Status) VALUES (?,?,?,?,?,?)");
+                        $stmt->bind_param('iissss', $external_id, $main_respondent_id, $complaint_title, $description, $incident_date, $status);
+                    }
+                } else { // fallback original Resident_ID behavior
+                    if($attachment_path){
+                        $stmt = $conn->prepare("INSERT INTO COMPLAINT_INFO (Resident_ID, Respondent_ID, Complaint_Title, Complaint_Details, Date_Filed, Status, Attachment_Path) VALUES (?,?,?,?,?,?,?)");
+                        $stmt->bind_param('iisssss', $external_id, $main_respondent_id, $complaint_title, $description, $incident_date, $status, $attachment_path);
+                    } else {
+                        $stmt = $conn->prepare("INSERT INTO COMPLAINT_INFO (Resident_ID, Respondent_ID, Complaint_Title, Complaint_Details, Date_Filed, Status) VALUES (?,?,?,?,?,?)");
+                        $stmt->bind_param('iissss', $external_id, $main_respondent_id, $complaint_title, $description, $incident_date, $status);
+                    }
+                }
+                if($stmt && $stmt->execute()){
+                    $complaint_id = $stmt->insert_id;
+                    $insert_success = true;
+                } else {
+                    $error_message = 'Failed to save complaint.' . ($stmt? ' '.$stmt->error:'');
+                }
+                if($stmt) $stmt->close();
+            } else {
+                $error_message = 'Database connection unavailable.';
+            }
+        }
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -37,26 +166,7 @@ session_start();
                         }
                     }
                 }
-            <?php
-            session_start();
-            // Redirect if not logged in (external user)
-            if(!isset($_SESSION['external_id']) && !isset($_SESSION['user_id'])){ header('Location: ../bpamis_website/login.php'); exit; }
-            $external_id = $_SESSION['external_id'] ?? $_SESSION['user_id'];
-
-            include_once '../server/server.php';
-            $external_name = '';
-            if(isset($conn)){
-                if($stmt = $conn->prepare("SELECT First_Name, Middle_Name, Last_Name FROM external_complainant WHERE External_Complaint_ID = ? LIMIT 1")){
-                    $stmt->bind_param('i',$external_id);
-                    $stmt->execute();
-                    $rs = $stmt->get_result();
-                    if($rw = $rs->fetch_assoc()){
-                        $external_name = trim(implode(' ', array_filter([$rw['First_Name']??'', $rw['Middle_Name']??'', $rw['Last_Name']??''])));
-                    }
-                    $stmt->close();
-                }
-            }
-            ?>
+            <?php // (duplicate block removed; logic handled above) ?>
             <!DOCTYPE html>
             <html lang="en">
             <head>
@@ -135,7 +245,19 @@ session_start();
                         <div class="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-full opacity-70"></div>
                         <div class="absolute -bottom-16 -left-16 w-56 h-56 bg-gradient-to-tr from-blue-50 to-cyan-100 rounded-full opacity-60"></div>
                         <div class="relative z-10">
-                            <form action="submit_complaint.php" method="POST" enctype="multipart/form-data" class="space-y-10" id="externalComplaintForm">
+                            <?php if($insert_success): ?>
+                                <div class="mb-6 p-4 rounded-lg bg-green-50 border border-green-200 text-green-700 flex items-start gap-3">
+                                    <i class="fa fa-check-circle mt-0.5"></i>
+                                    <div>
+                                        <div class="font-medium">Complaint submitted successfully.</div>
+                                        <div class="text-sm mt-1">Reference ID: <span class="font-semibold">COMP-<?= str_pad($complaint_id,3,'0',STR_PAD_LEFT) ?></span>. <a href="view_complaints.php" class="underline hover:text-green-800">View your complaints</a>.</div>
+                                    </div>
+                                </div>
+                            <?php elseif($error_message): ?>
+                                <div class="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 flex items-start gap-3"><i class="fa fa-exclamation-triangle mt-0.5"></i><div><?= htmlspecialchars($error_message) ?></div></div>
+                            <?php endif; ?>
+                            <form action="submit_complaints.php" method="POST" enctype="multipart/form-data" class="space-y-10" id="externalComplaintForm">
+                                <input type="hidden" id="complaint-title" value="" />
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     <div class="space-y-2">
                                         <label class="block text-sm font-medium text-gray-700">Complainant Name</label>
@@ -146,12 +268,12 @@ session_start();
                                         </div>
                                     </div>
                                     <div class="space-y-2">
-                                        <label for="respondent-name" class="block text-sm font-medium text-gray-700">Respondent Name(s) <span class="text-gray-400 font-normal">(Optional)</span></label>
+                                        <label for="respondent-name" class="block text-sm font-medium text-gray-700">Respondent Name(s) <span class="text-red-500">*</span></label>
                                         <div class="relative">
                                             <span class="absolute left-3 top-1/2 text-gray-400"><i class="fa-solid fa-user-group"></i></span>
-                                            <input type="text" id="respondent-name" name="respondent_name" class="w-full pl-10 pr-3 py-3 rounded-lg border border-gray-200 bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition form-input" placeholder="Type and select respondent names">
+                                            <input type="text" id="respondent-name" name="respondent_name" required class="w-full pl-10 pr-3 py-3 rounded-lg border border-gray-200 bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition form-input" placeholder="Type and select respondent names">
                                         </div>
-                                        <p class="text-xs text-gray-500 italic">Use full names (First Middle Last). Multiple allowed.</p>
+                                        <p class="text-xs text-gray-500 italic">Use full names (First Middle Last). Add one or more respondents.</p>
                                     </div>
                                     
                                     <div class="space-y-2">
@@ -182,27 +304,29 @@ session_start();
                                     </div>
                                 </div>
 
-                                <!-- Attachments -->
+                                <!-- Attachments (Enhanced) -->
                                 <div class="space-y-3">
                                     <label for="complaint-attachment" class="block text-sm font-medium text-gray-700">Attachments <span class="text-gray-400 font-normal">(Optional)</span></label>
                                     <div class="relative">
-                                        <label for="complaint-attachment" class="flex flex-col justify-center items-center w-full h-40 bg-gradient-to-br from-gray-50 to-white rounded-xl border border-dashed border-gray-300 cursor-pointer hover:border-blue-300 hover:bg-blue-50/40 transition group">
-                                            <div class="flex flex-col justify-center items-center pt-4 pb-5">
-                                                <i class="fas fa-cloud-upload-alt text-gray-400 text-3xl mb-3 group-hover:text-blue-500 transition"></i>
-                                                <p class="text-sm text-gray-600">Click to upload or drag & drop</p>
-                                                <p class="text-xs text-gray-400">PNG, JPG or PDF (max. 5MB each)</p>
+                                        <label for="complaint-attachment" id="dropZone" class="flex flex-col justify-center items-center w-full h-40 bg-gradient-to-br from-gray-50 to-white rounded-xl border border-dashed border-gray-300 cursor-pointer hover:border-primary-300 hover:bg-primary-50/40 transition group">
+                                            <div class="flex flex-col justify-center items-center pt-4 pb-5 pointer-events-none" id="dropInner">
+                                                <i class="fas fa-cloud-upload-alt text-gray-400 text-3xl mb-3 group-hover:text-primary-500 transition"></i>
+                                                <p class="text-sm text-gray-600"><span class="font-medium">Browse</span> or drag & drop files</p>
+                                                <p class="text-xs text-gray-400">Images / PDF (max 20MB each)</p>
                                             </div>
                                             <input id="complaint-attachment" type="file" name="complaint_attachment[]" class="hidden" multiple />
                                         </label>
                                     </div>
-                                    <p class="text-xs text-gray-500">You can upload multiple files as evidence for your complaint.</p>
+                                    <div id="fileErrors" class="hidden rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600"></div>
+                                    <div id="attachmentsPreview" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"></div>
+                                    <p class="text-xs text-gray-500">You can upload multiple evidence files. Hover a file to preview or remove.</p>
                                 </div>
 
                                 <div class="pt-4 border-t border-gray-100 flex flex-col sm:flex-row gap-3 sm:justify-between items-center">
                                     <div class="text-xs text-gray-500 flex items-start gap-2 max-w-sm"><i class="fa-solid fa-shield-halved text-blue-500 mt-0.5"></i><span>Data recorded here becomes part of the official barangay intake record and is handled confidentially.</span></div>
                                     <div class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
                                         <a href="home-external.php" class="py-3 px-6 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg flex items-center justify-center gap-2 transition"><i class="fa-solid fa-xmark"></i> Cancel</a>
-                                        <button type="submit" class="py-3 px-8 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg flex items-center justify-center gap-2 shadow-sm transition"><i class="fa-solid fa-paper-plane"></i> Submit Complaint</button>
+                                        <button id="submitBtn" type="submit" <?= $insert_success? 'disabled':''; ?> class="py-3 px-8 <?= $insert_success? 'bg-blue-400 cursor-not-allowed disabled:opacity-70':'bg-blue-400 cursor-not-allowed disabled:opacity-70'; ?> text-white font-medium rounded-lg flex items-center justify-center gap-2 shadow-sm transition"><i class="fa-solid fa-paper-plane"></i> Submit Complaint</button>
                                     </div>
                                 </div>
                             </form>
@@ -214,18 +338,83 @@ session_start();
                 // Tagify for respondents (optional multi names)
                 const respondentInput = document.getElementById('respondent-name');
                 if(respondentInput){ new Tagify(respondentInput,{duplicates:false, dropdown:{enabled:0}}); }
-                // File input preview + drag/drop
+                // Enhanced file handling & form gating
                 document.addEventListener('DOMContentLoaded',()=>{
                     const inputFile=document.getElementById('complaint-attachment');
-                    const label=document.querySelector('label[for="complaint-attachment"]');
+                    const dropZone=document.getElementById('dropZone');
+                    const preview=document.getElementById('attachmentsPreview');
+                    const fileErrors=document.getElementById('fileErrors');
+                    const submitBtn=document.getElementById('submitBtn');
+                    const desc=document.getElementById('complaint-description');
+                    const date=document.getElementById('incident-date');
+                    const MAX_SIZE=20*1024*1024; // 20MB per file
+                    const respondent=document.getElementById('respondent-name');
+                    function hasRespondent(){
+                        if(!respondent) return false;
+                        const v=respondent.value.trim();
+                        if(!v) return false;
+                        if(v.startsWith('[')){
+                            try { const arr=JSON.parse(v); return Array.isArray(arr) && arr.some(it=> (it.value||'').trim().length>0); } catch { return false; }
+                        }
+                        return v.length>0;
+                    }
+                    function refreshSubmit(){
+                        const okDesc=desc.value.trim().length>0;
+                        const okDate=date.value!=='';
+                        const okResp=hasRespondent();
+                        if(okDesc && okDate && okResp){ submitBtn.disabled=false; submitBtn.classList.remove('bg-blue-400','cursor-not-allowed'); submitBtn.classList.add('bg-blue-600','hover:bg-blue-700'); }
+                        else { submitBtn.disabled=true; submitBtn.classList.add('bg-blue-400','cursor-not-allowed'); submitBtn.classList.remove('bg-blue-600','hover:bg-blue-700'); }
+                    }
+                    desc.addEventListener('input',refreshSubmit); date.addEventListener('change',refreshSubmit); respondent.addEventListener('input',refreshSubmit); refreshSubmit();
+
+                    function bytesToSize(b){ const u=['B','KB','MB','GB']; let i=0; let v=b; while(v>=1024&&i<u.length-1){ v/=1024;i++; } return v.toFixed(1)+' '+u[i]; }
+                    function clearErrors(){ fileErrors.classList.add('hidden'); fileErrors.textContent=''; }
+                    function showError(msg){ fileErrors.textContent=msg; fileErrors.classList.remove('hidden'); }
+                    function rebuildFileList(keep){ const dt=new DataTransfer(); keep.forEach(f=>dt.items.add(f)); inputFile.files=dt.files; }
+                    let objectUrls=[];
+                    function renderPreviews(){
+                        // Revoke previous URLs
+                        objectUrls.forEach(u=>URL.revokeObjectURL(u));
+                        objectUrls=[];
+                        preview.innerHTML='';
+                        const files=[...inputFile.files];
+                        if(!files.length){ return; }
+                        files.forEach((f,idx)=>{
+                            const ext=f.name.split('.').pop().toLowerCase();
+                            const isImg=['png','jpg','jpeg','gif','webp','bmp'].includes(ext);
+                            const isPdf=ext==='pdf';
+                            const url=(isImg||isPdf)? URL.createObjectURL(f):'';
+                            if(url) objectUrls.push(url); else objectUrls.push(null);
+                            let inner='';
+                            if(isImg){
+                                inner = `<img src='${url}' alt='${f.name}' class='w-full h-24 object-cover rounded-md border' />`;
+                            } else if(isPdf){
+                                inner = `<div class="flex flex-col items-center justify-center gap-2 p-3 rounded-md border bg-white h-24"><i class=\"fa fa-file-pdf text-red-500 text-2xl\"></i><span class=\"text-[11px] text-center line-clamp-2\" title='${f.name}'>${f.name}</span></div>`;
+                            } else {
+                                inner = `<div class=\"flex flex-col items-center justify-center gap-2 p-3 rounded-md border bg-white h-24\"><i class=\"fa fa-file text-gray-500 text-2xl\"></i><span class=\"text-[11px] text-center line-clamp-2\" title='${f.name}'>${f.name}</span></div>`;
+                            }
+                            const wrap=document.createElement('div');
+                            wrap.className='relative group';
+                            wrap.innerHTML = inner + `\n<div class=\"absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-3 rounded-md\">\n  ${(isImg||isPdf)?`<button type=\"button\" data-action=\"view\" data-index=\"${idx}\" class=\"p-2 rounded-full bg-white/90 text-gray-700 hover:bg-white shadow\" title=\"View\"><i class=\"fa fa-eye\"></i></button>`:''}\n  <button type=\"button\" data-action=\"remove\" data-index=\"${idx}\" class=\"p-2 rounded-full bg-white/90 text-red-600 hover:bg-white shadow\" title=\"Remove\"><i class=\"fa fa-trash\"></i></button>\n</div>`;
+                            preview.appendChild(wrap);
+                        });
+                        // Display grid styling similar to resident version
+                        preview.classList.add('grid');
+                        preview.classList.remove('flex');
+                        preview.classList.add('grid-cols-2','md:grid-cols-3','gap-3');
+                    }
+                    function handleFiles(sel){ clearErrors(); const current=[...inputFile.files]; const incoming=[...sel]; const keep=[]; let rejected=[]; incoming.forEach(f=>{ if(f.size>MAX_SIZE){ rejected.push(`${f.name} (${bytesToSize(f.size)})`); } else { keep.push(f);} }); current.forEach(f=>keep.push(f)); if(rejected.length){ showError('Removed (exceeds 20MB each): '+rejected.join(', ')); }
+                        const dt=new DataTransfer(); keep.forEach(f=>dt.items.add(f)); inputFile.files=dt.files; renderPreviews(); }
                     if(inputFile){
-                        inputFile.addEventListener('change',()=>{ if(!inputFile.files.length) return; const f=inputFile.files; let html=''; if(f.length===1){ html=`<div class="flex flex-col justify-center items-center pt-4 pb-5"><i class=\"fas fa-file-alt text-primary-500 text-3xl mb-2\"></i><p class=\"text-sm text-gray-700 font-medium\">${f[0].name}</p><p class=\"text-xs text-gray-400 mt-1\">Click to change file</p></div>`;} else { html=`<div class=\"flex flex-col justify-center items-center pt-4 pb-5\"><i class=\"fas fa-file-alt text-primary-500 text-3xl mb-2\"></i><p class=\"text-sm text-gray-700 font-medium\">${f.length} files selected</p><p class=\"text-xs text-gray-400 mt-1\">Click to change files</p></div>`;} label.innerHTML=html; });
-                        ['dragenter','dragover','dragleave','drop'].forEach(ev=> label.addEventListener(ev,(e)=>{e.preventDefault();e.stopPropagation();},false));
-                        ['dragenter','dragover'].forEach(ev=> label.addEventListener(ev,()=>label.classList.add('border-primary-300','bg-primary-50/50'),false));
-                        ['dragleave','drop'].forEach(ev=> label.addEventListener(ev,()=>label.classList.remove('border-primary-300','bg-primary-50/50'),false));
-                        label.addEventListener('drop',(e)=>{ inputFile.files=e.dataTransfer.files; inputFile.dispatchEvent(new Event('change',{bubbles:true})); });
+                        inputFile.addEventListener('change',e=>{ handleFiles(e.target.files); });
+                        ;['dragenter','dragover','dragleave','drop'].forEach(ev=> dropZone.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();},false));
+                        ;['dragenter','dragover'].forEach(ev=> dropZone.addEventListener(ev,()=> dropZone.classList.add('border-primary-300','bg-primary-50/50'),false));
+                        ;['dragleave','drop'].forEach(ev=> dropZone.addEventListener(ev,()=> dropZone.classList.remove('border-primary-300','bg-primary-50/50'),false));
+                        dropZone.addEventListener('drop',e=>{ handleFiles(e.dataTransfer.files); });
+                        preview.addEventListener('click',e=>{ const btn=e.target.closest('button[data-action]'); if(!btn) return; const action=btn.getAttribute('data-action'); const idx=parseInt(btn.getAttribute('data-index')); if(Number.isNaN(idx)) return; if(action==='view'){ const url=objectUrls[idx]; if(url) window.open(url,'_blank'); } else if(action==='remove'){ const files=[...inputFile.files]; files.splice(idx,1); rebuildFileList(files); renderPreviews(); } });
                     }
                 });
+                </script>
                 </script>
                 <?php
                     $config = include '../chatbot/config.php';
@@ -260,8 +449,10 @@ session_start();
                         let allowed=false;
                         form.addEventListener('submit',async (e)=>{
                             if(allowed) return; e.preventDefault();
-                            const title=document.getElementById('complaint-title').value.trim();
                             const desc=document.getElementById('complaint-description').value.trim();
+                            const titleInput=document.getElementById('complaint-title');
+                            titleInput.value = desc.substring(0,40) || 'Complaint';
+                            const title=titleInput.value.trim();
                             const result=await checkComplaintScope(title,desc);
                             if(result==='OUT_OF_SCOPE'){ modal.classList.remove('hidden'); modal.classList.add('flex'); document.getElementById('out_of_scope').value='1'; }
                             else { document.getElementById('out_of_scope').value='0'; allowed=true; form.submit(); }
@@ -273,4 +464,3 @@ session_start();
                 <?php include '../chatbot/bpamis_case_assistant.php'; ?>
             </body>
             </html>
-        $config = include '../chatbot/config.php';

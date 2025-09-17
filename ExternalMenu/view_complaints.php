@@ -1,15 +1,34 @@
 <?php
-session_start(); 
+session_start();
+include '../server/server.php';
 
+// Determine external user id (prefer external_id session variable)
+$external_id = null;
+if(isset($_SESSION['external_id'])) $external_id = (int)$_SESSION['external_id'];
+elseif(isset($_SESSION['user_id'])) $external_id = (int)$_SESSION['user_id'];
 
-$user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : null;
-include '../server/server.php'; 
+if(!$external_id){
+    header('Location: ../bpamis_website/login.php');
+    exit;
+}
 
+// Detect whether complaint_info has external_complainant_id column
+$useExternalCol = false;
+if($conn){
+    if($colRes = $conn->query("SHOW COLUMNS FROM complaint_info LIKE 'external_complainant_id'")){
+        if($colRes->num_rows>0) $useExternalCol = true; $colRes->close();
+    }
+}
 
-$sql = "SELECT Complaint_ID, Complaint_Title, Complaint_Details, Date_Filed, Status FROM complaint_info WHERE external_complainant_id = ?";
+if($useExternalCol){
+    $sql = "SELECT Complaint_ID, Complaint_Title, Complaint_Details, Date_Filed, Status FROM complaint_info WHERE external_complainant_id = ? ORDER BY Complaint_ID DESC";
+} else {
+    // Fallback: store external complaints under Resident_ID (legacy) so filter by Resident_ID
+    $sql = "SELECT Complaint_ID, Complaint_Title, Complaint_Details, Date_Filed, Status FROM complaint_info WHERE Resident_ID = ? ORDER BY Complaint_ID DESC";
+}
 
 $stmt = $conn->prepare($sql);
-$stmt->bind_param("i", $user_id);
+$stmt->bind_param("i", $external_id);
 $stmt->execute();
 $result = $stmt->get_result();
 
@@ -448,7 +467,7 @@ $conn->close();
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
                         <div class="md:col-span-5 relative group">
-                            <input id="searchInput" type="text" placeholder="Search by ID, title, status or description..." class="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200/80 bg-white/70 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 placeholder:text-gray-400 text-sm transition" />
+                            <input id="searchInput" type="text" placeholder="Search by ID, status or description..." class="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200/80 bg-white/70 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 placeholder:text-gray-400 text-sm transition" />
                             <i class="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-primary-400 group-focus-within:text-primary-500 transition"></i>
                         </div>
                         <div class="md:col-span-2 relative">
@@ -510,7 +529,7 @@ $conn->close();
                             <span class="text-[11px] font-mono tracking-wide text-gray-500">
                                 <?= 'COMP-' . str_pad($complaint['Complaint_ID'], 3, '0', STR_PAD_LEFT); ?>
                             </span>
-                            <h3 class="mt-1 font-medium text-gray-800 leading-snug line-clamp-2" title="<?= htmlspecialchars($complaint['Complaint_Title']) ?>"><?= htmlspecialchars($complaint['Complaint_Title']) ?></h3>
+                           
                         </div>
                         <span class="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold <?= $statusClass ?>">
                             <?= htmlspecialchars($status) ?>

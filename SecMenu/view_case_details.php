@@ -6,18 +6,54 @@ include '../server/server.php'; // provides $conn
 if(!isset($_GET['id'])){ echo "<p class='text-center text-red-500'>Case ID not provided.</p>"; exit; }
 $case_id = intval($_GET['id']);
 
-// Fetch case + complaint + complainant
-$sql = "SELECT cs.Case_ID, cs.Case_Status, cs.Date_Opened, ci.Complaint_ID, ci.Complaint_Title, ci.Complaint_Details, ci.Date_Filed,
+// Detect if Attachment_Path and case_type columns exist for later rendering (support flexible schema)
+$hasAttachmentCol = false; $hasCaseTypeCol=false;
+if($res=$conn->query("SHOW COLUMNS FROM COMPLAINT_INFO LIKE 'Attachment_Path'")) { if($res->num_rows>0) $hasAttachmentCol=true; $res->close(); }
+if($res=$conn->query("SHOW COLUMNS FROM COMPLAINT_INFO LIKE 'case_type'")) { if($res->num_rows>0) $hasCaseTypeCol=true; $res->close(); }
+
+// Fetch case + complaint + complainant (+ attachment path / case_type if present)
+$selectExtras = '';
+if($hasAttachmentCol) $selectExtras .= ', ci.Attachment_Path';
+if($hasCaseTypeCol) $selectExtras .= ', ci.case_type';
+$sql = "SELECT cs.Case_ID, cs.Case_Status, cs.Date_Opened, ci.Complaint_ID, ci.Complaint_Title, ci.Complaint_Details, ci.Date_Filed".$selectExtras.",
                                 comp.First_Name AS Complainant_First, comp.Last_Name AS Complainant_Last
                  FROM CASE_INFO cs
                  LEFT JOIN COMPLAINT_INFO ci ON cs.Complaint_ID = ci.Complaint_ID
                  LEFT JOIN RESIDENT_INFO comp ON ci.Resident_ID = comp.Resident_ID
                  WHERE cs.Case_ID = ?";
 $stmt = $conn->prepare($sql);
+if(!$stmt){ echo "<p class='text-center text-red-500'>Query preparation failed.</p>"; exit; }
 $stmt->bind_param('i',$case_id); $stmt->execute(); $result=$stmt->get_result();
 if($result->num_rows===0){ echo "<p class='text-center text-red-500'>Case not found.</p>"; exit; }
 $case = $result->fetch_assoc(); $stmt->close();
 $complaint_id = $case['Complaint_ID'];
+
+// Derive case type label & style
+$caseTypeRaw = $hasCaseTypeCol ? trim((string)$case['case_type']) : '';
+$caseType = $caseTypeRaw !== '' ? strtoupper($caseTypeRaw) : 'UNSPECIFIED';
+$typeStyles = [
+    'CRIMINAL' => 'bg-red-50 text-red-600 border border-red-200',
+    'CIVIL'    => 'bg-gray-100 text-gray-700 border border-gray-300'
+];
+$typeClass = $typeStyles[$caseType] ?? 'bg-primary-50 text-primary-600 border border-primary-200';
+
+// Parse attachments into array (if column present)
+$attachments = [];
+if($hasAttachmentCol && !empty($case['Attachment_Path'])) {
+    $rawParts = explode(';', $case['Attachment_Path']);
+    foreach($rawParts as $p){
+        $p = trim($p);
+        if($p==='') continue;
+        $p = ltrim($p,'/');
+        $segments = array_map(function($seg){ return rawurlencode($seg); }, explode('/', $p));
+        $encoded = implode('/', $segments);
+        $attachments[] = [
+            'raw' => $p,
+            'encoded' => $encoded,
+            'ext' => strtolower(pathinfo($p, PATHINFO_EXTENSION))
+        ];
+    }
+}
 
 // Respondents aggregation
 $respondent_names=[];
@@ -77,6 +113,7 @@ $statusClass = $caseStatusStyles[$status] ?? 'bg-primary-50 text-primary-600 bor
                     <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-gray-800 flex flex-wrap items-center gap-3">
                         <span class="bg-clip-text text-transparent bg-gradient-to-r from-primary-700 to-primary-500">Case #<?= htmlspecialchars($case['Case_ID']) ?></span>
                         <span class="inline-flex items-center gap-1 text-xs font-medium px-3 py-1 rounded-full <?= $statusClass ?> shadow-sm"><i class="fa fa-circle text-[8px]"></i> <?= htmlspecialchars($case['Case_Status']) ?></span>
+                        <span class="inline-flex items-center gap-1 text-xs font-medium px-3 py-1 rounded-full <?= $typeClass ?> shadow-sm"><i class="fa fa-tag text-[10px]"></i> <?= htmlspecialchars($caseType) ?></span>
                     </h1>
                     <div class="mt-3 flex flex-wrap items-center gap-4 text-sm text-gray-500">
                         <span class="inline-flex items-center gap-1"><i class="fa fa-calendar"></i> Opened <?= date('F d, Y', strtotime($case['Date_Opened'])) ?></span>
@@ -101,10 +138,6 @@ $statusClass = $caseStatusStyles[$status] ?? 'bg-primary-50 text-primary-600 bor
                 <div>
                     <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-3">Complaint Information</h2>
                     <div class="group rounded-xl border bg-white/70 border-gray-200 hover:border-primary-200 transition p-4 shadow-sm mb-5">
-                        <p class="field-label mb-1">Complaint Title</p>
-                        <p class="font-semibold text-gray-800 leading-relaxed"><?= htmlspecialchars($case['Complaint_Title']) ?></p>
-                    </div>
-                    <div class="group rounded-xl border bg-white/70 border-gray-200 hover:border-primary-200 transition p-4 shadow-sm mb-5">
                         <p class="field-label mb-1">Complaint Details</p>
                         <p class="text-gray-700 leading-relaxed whitespace-pre-line"><?= nl2br(htmlspecialchars($case['Complaint_Details'])) ?></p>
                     </div>
@@ -119,6 +152,44 @@ $statusClass = $caseStatusStyles[$status] ?? 'bg-primary-50 text-primary-600 bor
                         </div>
                     </div>
                 </div>
+                <?php if($hasAttachmentCol): ?>
+                <div>
+                    <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-3">Attachments</h2>
+                    <?php if(empty($attachments)): ?>
+                        <p class="text-sm text-gray-500 italic">No attachments provided.</p>
+                    <?php else: ?>
+                    <div class="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                        <?php foreach($attachments as $att): $isImage=in_array($att['ext'],['jpg','jpeg','png','gif','webp']); $encodedPath=$att['encoded']; $basename=basename($att['raw']); $isPdf=strtolower(pathinfo($basename,PATHINFO_EXTENSION))==='pdf'; ?>
+                        <div class="group relative rounded-xl border bg-white/70 border-gray-200 hover:border-primary-300 hover:shadow-glow transition overflow-hidden">
+                            <div class="aspect-video w-full bg-gray-100 flex items-center justify-center overflow-hidden">
+                                <?php if($isImage): ?>
+                                    <img src="../<?= htmlspecialchars($encodedPath) ?>" alt="Attachment" class="w-full h-full object-cover object-center group-hover:scale-105 transition" onerror="this.src='https://via.placeholder.com/300x180?text=Missing';" />
+                                <?php elseif($isPdf): ?>
+                                    <div class="flex flex-col items-center justify-center text-primary-600 text-sm font-medium">
+                                        <i class="fa fa-file-pdf text-3xl mb-1"></i>
+                                        PDF File
+                                    </div>
+                                <?php else: ?>
+                                    <div class="flex flex-col items-center justify-center text-primary-600 text-sm font-medium px-2 text-center">
+                                        <i class="fa fa-paperclip text-3xl mb-1"></i>
+                                        <span class="break-all leading-tight text-[11px]"><?= htmlspecialchars($basename) ?></span>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                <div class="flex gap-2">
+                                    <?php if($isImage): ?>
+                                        <button type="button" onclick="previewImage('../<?= htmlspecialchars($encodedPath) ?>')" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white text-primary-700 text-xs font-medium shadow-sm"><i class="fa fa-eye"></i> View</button>
+                                    <?php endif; ?>
+                                    <a href="../<?= htmlspecialchars($encodedPath) ?>" download class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium shadow-sm"><i class="fa fa-download"></i> Download</a>
+                                </div>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
                 <div class="pt-4 border-t border-dashed border-primary-200/60 flex flex-wrap items-center gap-3">
                     <a href="view_cases.php" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/80 hover:bg-white text-primary-700 border border-primary-200 shadow-sm text-sm font-medium transition"><i class="fa fa-arrow-left"></i> Back</a>
                     <a href="update_case_status.php?id=<?= urlencode($case['Case_ID']) ?>" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white shadow text-sm font-medium transition"><i class="fa fa-pen"></i> Update Case Status</a>
@@ -127,5 +198,29 @@ $statusClass = $caseStatusStyles[$status] ?? 'bg-primary-50 text-primary-600 bor
         </section>
     </main>
     <?php $conn->close(); ?>
+    <script>
+    function previewImage(src){
+        var modal=document.getElementById('imgPreviewModal');
+        var img=document.getElementById('imgPreviewTag');
+        if(!modal||!img) return;
+        img.src=src;
+        modal.classList.remove('hidden');
+        document.body.classList.add('overflow-hidden');
+    }
+    function closePreview(){
+        var modal=document.getElementById('imgPreviewModal');
+        if(!modal) return;
+        modal.classList.add('hidden');
+        document.body.classList.remove('overflow-hidden');
+    }
+    </script>
+    <div id="imgPreviewModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
+        <div class="relative max-w-4xl w-full">
+            <button onclick="closePreview()" class="absolute -top-4 -right-4 w-10 h-10 rounded-full bg-white text-gray-700 flex items-center justify-center shadow-lg hover:bg-primary-600 hover:text-white transition"><i class="fa fa-xmark text-lg"></i></button>
+            <div class="bg-white rounded-2xl overflow-hidden shadow-glow ring-1 ring-primary-200/40">
+                <img id="imgPreviewTag" src="" alt="Preview" class="w-full max-h-[80vh] object-contain bg-black" />
+            </div>
+        </div>
+    </div>
 </body>
 </html>

@@ -8,7 +8,10 @@ $caseId = isset($_GET['case_id']) ? (int)$_GET['case_id'] : 0;
 if($caseId<=0){ header('Location: view_cases.php'); exit; }
 
 // Fetch case + complaint ensuring ownership
-$stmt = $conn->prepare("SELECT ci.Case_ID, ci.Case_Status, ci.Date_Opened, ci.Complaint_ID, co.Complaint_Title, co.Complaint_Details, co.Status AS Complaint_Status, co.Resident_ID
+$stmt = $conn->prepare("SELECT ci.Case_ID, ci.Case_Status, ci.Date_Opened, ci.Complaint_ID,
+                               co.Complaint_Title, /* kept for legacy references */
+                               co.case_type,       /* new field for resident display */
+                               co.Complaint_Details, co.Status AS Complaint_Status, co.Resident_ID, co.Attachment_Path
                         FROM case_info ci
                         INNER JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID
                         WHERE ci.Case_ID = ? AND co.Resident_ID = ? LIMIT 1");
@@ -48,6 +51,8 @@ $style = $statusMap[strtolower($status)] ?? ['badge'=>'bg-gray-50 text-gray-700 
 
 $caseDisplayId = 'CASE-'.str_pad($case['Case_ID'],3,'0',STR_PAD_LEFT);
 $complaintDisplayId = 'COMP-'.str_pad($case['Complaint_ID'],3,'0',STR_PAD_LEFT);
+$caseTypeRaw = trim($case['case_type'] ?? '');
+$caseTypeDisplay = $caseTypeRaw !== '' ? ucwords($caseTypeRaw) : 'Unspecified Case Type';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -113,7 +118,7 @@ $complaintDisplayId = 'COMP-'.str_pad($case['Complaint_ID'],3,'0',STR_PAD_LEFT);
                         <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-3">Linked Complaint</h2>
                         <div class="relative rounded-xl border border-primary-100/70 bg-white/80 p-5 shadow-sm">
                             <div class="absolute -top-3 left-5 px-2 text-[10px] font-semibold tracking-wide uppercase bg-primary-100 text-primary-700 rounded-full">Complaint</div>
-                            <p class="font-medium text-gray-800 leading-snug mb-2"><?= htmlspecialchars($case['Complaint_Title'] ?: 'Untitled Complaint') ?></p>
+                            <p class="font-medium text-gray-800 leading-snug mb-2" title="<?= htmlspecialchars($caseTypeDisplay) ?>"><?= htmlspecialchars($caseTypeDisplay) ?></p>
                             <p class="text-gray-700 leading-relaxed whitespace-pre-line text-sm">
                                 <?= nl2br(htmlspecialchars($case['Complaint_Details'] ?: 'No description provided.')) ?>
                             </p>
@@ -125,6 +130,59 @@ $complaintDisplayId = 'COMP-'.str_pad($case['Complaint_ID'],3,'0',STR_PAD_LEFT);
                             <?= htmlspecialchars($style['note']) ?>
                         </div>
                     </div>
+                    <?php
+                        $attachmentsRaw = $case['Attachment_Path'] ?? '';
+                        $gallery = [];
+                        if($attachmentsRaw){
+                            $parts = array_filter(array_map('trim', explode(';',$attachmentsRaw)));
+                            foreach($parts as $p){
+                                if(!$p) continue;
+                                $clean = str_replace('\\','/',$p);
+                                $clean = preg_replace('#\.{2,}#','',$clean);
+                                $clean = ltrim($clean,'/');
+                                if($clean==='') continue;
+                                $ext = strtolower(pathinfo($clean, PATHINFO_EXTENSION));
+                                $type = in_array($ext,['png','jpg','jpeg','gif','webp','bmp']) ? 'image' : ($ext==='pdf' ? 'pdf' : 'file');
+                                $segments = array_map('rawurlencode', explode('/', $clean));
+                                $encoded = implode('/', $segments);
+                                $gallery[] = ['raw'=>$clean,'encoded'=>$encoded,'ext'=>$ext,'type'=>$type];
+                            }
+                        }
+                    ?>
+                    <?php if(!empty($gallery)): ?>
+                    <div>
+                        <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-4 flex items-center gap-2"><i class="fa fa-paperclip text-primary-500"></i> Complaint Attachments</h2>
+                        <div class="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                            <?php foreach($gallery as $g): ?>
+                            <div class="group relative rounded-xl border bg-white/80 border-gray-200 hover:border-primary-300 hover:shadow-glow transition overflow-hidden">
+                                <div class="aspect-video w-full bg-gray-100 flex items-center justify-center overflow-hidden">
+                                    <?php if($g['type']==='image'): ?>
+                                        <img src="../<?= htmlspecialchars($g['encoded']) ?>" alt="Attachment" class="w-full h-full object-cover object-center group-hover:scale-105 transition" onerror="this.onerror=null;this.src='https://via.placeholder.com/300x180?text=Missing';" />
+                                    <?php elseif($g['type']==='pdf'): ?>
+                                        <div class="flex flex-col items-center justify-center text-primary-600 text-sm font-medium">
+                                            <i class="fa fa-file-pdf text-3xl mb-1"></i>
+                                            PDF File
+                                        </div>
+                                    <?php else: ?>
+                                        <div class="flex flex-col items-center justify-center text-primary-600 text-xs font-medium p-2 text-center">
+                                            <i class="fa fa-paperclip text-2xl mb-1"></i>
+                                            <span class="break-all leading-tight">File</span>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                    <div class="flex gap-2">
+                                        <?php if($g['type']==='image'): ?>
+                                            <button type="button" onclick="previewImage('../<?= htmlspecialchars($g['encoded']) ?>')" aria-label="View image" class="inline-flex items-center justify-center h-9 w-9 rounded-md bg-white/90 hover:bg-white text-primary-700 text-sm font-medium shadow-sm"><i class="fa fa-eye"></i></button>
+                                        <?php endif; ?>
+                                        <a href="../<?= htmlspecialchars($g['encoded']) ?>" download aria-label="Download file" class="inline-flex items-center justify-center h-9 w-9 rounded-md bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium shadow-sm"><i class="fa fa-download"></i></a>
+                                    </div>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <?php endif; ?>
                     <div>
                         <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-4 flex items-center gap-2"><i class="fa fa-scale-balanced text-primary-500"></i> Hearings & Schedule</h2>
                         <?php if(empty($hearings)): ?>
@@ -187,5 +245,23 @@ $complaintDisplayId = 'COMP-'.str_pad($case['Complaint_ID'],3,'0',STR_PAD_LEFT);
         </section>
     </main>
     <?php include("../chatbot/bpamis_case_assistant.php"); ?>
+        <script>
+        function previewImage(src){
+            var modal=document.getElementById('imgPreviewModal');
+            var img=document.getElementById('imgPreviewTag');
+            if(!modal||!img) return; img.src=src; modal.classList.remove('hidden'); document.body.classList.add('overflow-hidden');
+        }
+        function closePreview(){
+            var modal=document.getElementById('imgPreviewModal'); if(!modal) return; modal.classList.add('hidden'); document.body.classList.remove('overflow-hidden');
+        }
+        </script>
+        <div id="imgPreviewModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6">
+            <div class="relative max-w-4xl w-full">
+                <button onclick="closePreview()" class="absolute -top-4 -right-4 w-10 h-10 rounded-full bg-white text-gray-700 flex items-center justify-center shadow-lg hover:bg-primary-600 hover:text-white transition"><i class="fa fa-xmark text-lg"></i></button>
+                <div class="bg-white rounded-2xl overflow-hidden shadow-glow ring-1 ring-primary-200/40">
+                    <img id="imgPreviewTag" src="" alt="Preview" class="w-full max-h-[80vh] object-contain bg-black" />
+                </div>
+            </div>
+        </div>
 </body>
 </html>

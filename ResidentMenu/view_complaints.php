@@ -285,7 +285,6 @@ $totalComplaints = count($complaints);
                             <span class="text-[11px] font-mono tracking-wide text-gray-500">
                                 <?= 'COMP-' . str_pad($complaint['Complaint_ID'], 3, '0', STR_PAD_LEFT); ?>
                             </span>
-                            <h3 class="mt-1 font-medium text-gray-800 leading-snug line-clamp-2" title="<?= htmlspecialchars($complaint['Complaint_Title']) ?>"><?= htmlspecialchars($complaint['Complaint_Title']) ?></h3>
                         </div>
                         <span class="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold <?= $statusClass ?>">
                             <?= htmlspecialchars($status) ?>

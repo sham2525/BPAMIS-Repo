@@ -13,7 +13,8 @@ include '../server/server.php';
 $sql = "
     SELECT 
         ci.Case_ID,
-        co.Complaint_Title,
+        co.Complaint_Title, /* legacy retained */
+        co.case_type,       /* new display target */
         co.Date_Filed,
         ci.case_status,
         sl.hearingDateTime AS Next_Hearing_Date
@@ -429,7 +430,7 @@ $otherCount = 0; foreach($statusCounts as $k=>$v){ if(!in_array($k,['Pending','M
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
                         <div class="md:col-span-5 relative group">
-                            <input id="searchInput" type="text" placeholder="Search by ID, title, status..." class="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200/80 bg-white/70 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 placeholder:text-gray-400 text-sm transition" />
+                            <input id="searchInput" type="text" placeholder="Search by ID, type, status..." class="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200/80 bg-white/70 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 placeholder:text-gray-400 text-sm transition" />
                             <i class="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-primary-400 group-focus-within:text-primary-500 transition"></i>
                         </div>
                         <div class="md:col-span-2 relative">
@@ -483,12 +484,33 @@ $otherCount = 0; foreach($statusCounts as $k=>$v){ if(!in_array($k,['Pending','M
                     $filedDisplay = $filed ? date('F j, Y', strtotime($filed)) : 'N/A';
                     $hearing = $case['Next_Hearing_Date'] ?? '';
                     $hearingDisplay = $hearing ? date('F j, Y', strtotime($hearing)) : 'N/A';
+                    $caseTypeRaw = trim($case['case_type'] ?? '');
+                    $caseTypeDisplay = $caseTypeRaw !== '' ? ucwords($caseTypeRaw) : 'Unspecified Case Type';
+                    $lcType = strtolower($caseTypeRaw);
+                    if($lcType === 'criminal case' || $lcType === 'criminal'){
+                        $typeBorderClass = 'border-red-300 bg-red-50/60 ring-1 ring-red-100';
+                    } elseif($lcType === 'civil case' || $lcType === 'civil') {
+                        $typeBorderClass = 'border-gray-300 bg-gray-50/70 ring-1 ring-gray-200';
+                    } else {
+                        $typeBorderClass = 'border-gray-100 bg-white/80';
+                    }
                 ?>
-                <div class="case-card group relative bg-white/80 backdrop-blur rounded-xl border border-gray-100 p-4 flex flex-col gap-3 hover:-translate-y-[2px] hover:shadow-md transition-all" data-status="<?= strtolower($status) ?>" data-date="<?= $filedDateRaw ?>" data-id-text="<?= htmlspecialchars($case['Case_ID']) ?>">
+                <div class="case-card group relative backdrop-blur rounded-xl border <?= $typeBorderClass ?> p-4 flex flex-col gap-3 hover:-translate-y-[3px] hover:shadow-md transition-all" data-status="<?= strtolower($status) ?>" data-date="<?= $filedDateRaw ?>" data-id-text="<?= htmlspecialchars($case['Case_ID']) ?>">
                     <div class="flex items-start justify-between gap-2">
                         <div class="flex flex-col">
                             <span class="text-[11px] font-mono tracking-wide text-gray-500"><?= htmlspecialchars($case['Case_ID']) ?></span>
-                            <h3 class="mt-1 font-medium text-gray-800 leading-snug line-clamp-2" title="<?= htmlspecialchars($case['Complaint_Title']) ?>"><?= htmlspecialchars($case['Complaint_Title']) ?></h3>
+                            <h3 class="mt-1 font-semibold text-gray-800 leading-snug line-clamp-2 flex items-center gap-2" title="<?= htmlspecialchars($caseTypeDisplay) ?>">
+                                <?= htmlspecialchars($caseTypeDisplay) ?>
+                                <?php if($lcType === 'criminal case' || $lcType === 'criminal'): ?>
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 border border-red-200">
+                                        <i class="fa-solid fa-triangle-exclamation"></i> Criminal
+                                    </span>
+                                <?php elseif($lcType === 'civil case' || $lcType === 'civil'): ?>
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-200 text-gray-700 border border-gray-300">
+                                        <i class="fa-solid fa-scale-balanced"></i> Civil
+                                    </span>
+                                <?php endif; ?>
+                            </h3>
                         </div>
                         <span class="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold <?= $statusClass ?>">
                             <?= htmlspecialchars($status) ?>
