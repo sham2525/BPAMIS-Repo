@@ -2,19 +2,45 @@
 session_start();
 include '../server/server.php';
 
-if(!isset($_SESSION['user_id'])){ header('Location: ../login.php'); exit; }
-$externalId = (int)$_SESSION['user_id'];
+// Accept external_id or user_id for external complainant session
+$externalSessionId = null;
+if(isset($_SESSION['external_id'])) $externalSessionId = (int)$_SESSION['external_id'];
+elseif(isset($_SESSION['user_id'])) $externalSessionId = (int)$_SESSION['user_id'];
+if(!$externalSessionId){ header('Location: ../login.php'); exit; }
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 if($id<=0){ header('Location: view_complaints.php'); exit; }
 
 // Fetch complaint securely and ensure ownership for external complainant
-$stmt = $conn->prepare("SELECT Complaint_ID, Complaint_Title, Complaint_Details, Date_Filed, Status FROM complaint_info WHERE Complaint_ID = ? AND external_complainant_id = ? LIMIT 1");
-$stmt->bind_param('ii',$id,$externalId);
+// Detect external_complainant_id column or fallback to Resident_ID
+$useExternalCol=false;
+if($colRes = $conn->query("SHOW COLUMNS FROM complaint_info LIKE 'external_complainant_id'")){
+    if($colRes->num_rows>0) $useExternalCol=true; $colRes->close();
+}
+$idField = $useExternalCol? 'external_complainant_id':'Resident_ID';
+// Try to also get Attachment_Path and case_type if present
+$hasAttachment=false; $hasCaseType=false;
+if($c1 = $conn->query("SHOW COLUMNS FROM complaint_info LIKE 'Attachment_Path'")){ if($c1->num_rows>0) $hasAttachment=true; $c1->close(); }
+if($c2 = $conn->query("SHOW COLUMNS FROM complaint_info LIKE 'case_type'")){ if($c2->num_rows>0) $hasCaseType=true; $c2->close(); }
+$selectCols = "Complaint_ID, Complaint_Title, Complaint_Details, Date_Filed, Status".
+    ($hasAttachment? ", Attachment_Path":"").
+    ($hasCaseType? ", case_type":"");
+$sql = "SELECT $selectCols FROM complaint_info WHERE Complaint_ID = ? AND $idField = ? LIMIT 1";
+$stmt = $conn->prepare($sql);
+$stmt->bind_param('ii',$id,$externalSessionId);
 $stmt->execute();
 $res = $stmt->get_result();
 if($res->num_rows===0){ $stmt->close(); header('Location: view_complaints.php?error=notfound'); exit; }
 $complaint = $res->fetch_assoc();
 $stmt->close();
+
+// Helper to safely encode relative paths segment by segment
+function encode_path($rel){
+    $rel = str_replace('\\','/',$rel);
+    $rel = preg_replace('#\.\.+#','',$rel); // strip traversal
+    $rel = ltrim($rel,'/');
+    $segments = array_filter(explode('/', $rel), fn($s)=>$s!=='');
+    return implode('/', array_map('rawurlencode', $segments));
+}
 
 function relative_time($date){
     if(!$date) return '';
@@ -25,6 +51,8 @@ function relative_time($date){
 }
 
 $status = $complaint['Status'];
+$caseTypeRaw = $hasCaseType? ($complaint['case_type'] ?? ''):'';
+$formattedCaseType = $caseTypeRaw? ucwords(strtolower($caseTypeRaw)) : '';
 $resolutionNote = match(strtolower($status)){
     'in case' => 'This complaint is currently processed within the Barangay Justice System as part of an open case.',
     'rejected' => 'This complaint was evaluated and not admitted into the Barangay Justice System.',
@@ -88,6 +116,19 @@ $displayId = 'COMP-'.str_pad($complaint['Complaint_ID'],3,'0',STR_PAD_LEFT);
                 <div class="flex-1 min-w-0">
                     <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-gray-800 flex flex-wrap items-center gap-3">
                         <span class="bg-clip-text text-transparent bg-gradient-to-r from-primary-700 to-primary-500">Complaint Details</span>
+                        <?php if($formattedCaseType): ?>
+                            <?php
+                                $ctLower = strtolower($formattedCaseType);
+                                $ctClasses = match($ctLower){
+                                    'criminal' => 'bg-red-50 text-red-600 border border-red-200',
+                                    'civil' => 'bg-gray-50 text-gray-600 border border-gray-200',
+                                    default => 'bg-primary-50 text-primary-600 border border-primary-200'
+                                };
+                            ?>
+                            <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold <?= $ctClasses ?>">
+                                <i class="fa fa-scale-balanced text-[11px]"></i> <?= htmlspecialchars($formattedCaseType) ?>
+                            </span>
+                        <?php endif; ?>
                         <span class="px-3 py-1 text-xs font-semibold rounded-full border <?= $style['badge'] ?>">
                             <?= htmlspecialchars($status) ?>
                         </span>
@@ -103,13 +144,7 @@ $displayId = 'COMP-'.str_pad($complaint['Complaint_ID'],3,'0',STR_PAD_LEFT);
             <!-- Details Grid -->
             <div class="mt-10 grid gap-8 md:grid-cols-5">
                 <div class="md:col-span-3 space-y-8">
-                    <div>
-                        <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-3">Title</h2>
-                        <div class="relative rounded-xl border border-primary-100/70 bg-white/80 p-5 shadow-sm">
-                            <div class="absolute -top-3 left-5 px-2 text-[10px] font-semibold tracking-wide uppercase bg-primary-100 text-primary-700 rounded-full">Complaint</div>
-                            <p class="font-medium text-gray-800 leading-snug"><?= htmlspecialchars($complaint['Complaint_Title'] ?: 'Untitled Complaint') ?></p>
-                        </div>
-                    </div>
+                    
                     <div>
                         <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-3">Description</h2>
                         <div class="relative rounded-xl border border-primary-100/70 bg-white/80 p-5 shadow-sm">
@@ -125,6 +160,52 @@ $displayId = 'COMP-'.str_pad($complaint['Complaint_ID'],3,'0',STR_PAD_LEFT);
                             <?= htmlspecialchars($resolutionNote) ?>
                         </div>
                     </div>
+                    <?php if($hasAttachment && !empty($complaint['Attachment_Path'])): ?>
+                        <?php
+                        $paths = array_filter(array_map('trim', explode(';',$complaint['Attachment_Path'])));
+                        $items = [];
+                        foreach($paths as $p){
+                            if(!$p) continue;
+                            $clean = str_replace('\\','/',$p);
+                            $clean = preg_replace('#\.\.+#','',$clean);
+                            $clean = ltrim($clean,'/');
+                            if($clean==='') continue;
+                            $ext = strtolower(pathinfo($clean, PATHINFO_EXTENSION));
+                            $type = in_array($ext,['png','jpg','jpeg','gif','webp','bmp'])? 'image':($ext==='pdf'?'pdf':'file');
+                            $items[] = ['path'=>$clean,'ext'=>$ext,'type'=>$type,'encoded'=>encode_path($clean)];
+                        }
+                        ?>
+                        <div>
+                            <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-3">Attachments</h2>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-4" id="attachmentGallery">
+                                <?php foreach($items as $it): ?>
+                                <div class="group relative border rounded-xl bg-white/70 backdrop-blur p-2 shadow-sm hover:shadow-md transition overflow-hidden">
+                                    <?php if($it['type']==='image'): ?>
+                                        <img src="../<?= htmlspecialchars($it['encoded']) ?>" alt="Attachment" class="w-full h-28 object-cover rounded-lg border cursor-pointer" onclick="previewImage('../<?= htmlspecialchars($it['encoded']) ?>')" />
+                                    <?php elseif($it['type']==='pdf'): ?>
+                                        <div class="w-full h-28 flex flex-col items-center justify-center gap-2 rounded-lg border bg-white/80">
+                                            <i class="fa fa-file-pdf text-red-500 text-3xl"></i>
+                                            <span class="text-[11px] text-gray-600 truncate px-2">PDF File</span>
+                                        </div>
+                                    <?php else: ?>
+                                        <div class="w-full h-28 flex flex-col items-center justify-center gap-2 rounded-lg border bg-white/80">
+                                            <i class="fa fa-file text-gray-400 text-3xl"></i>
+                                            <span class="text-[11px] text-gray-600 truncate px-2">File</span>
+                                        </div>
+                                    <?php endif; ?>
+                                    <div class="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2 rounded-lg">
+                                        <?php if($it['type']==='image'): ?>
+                                            <button type="button" aria-label="Preview image" class="h-9 w-9 flex items-center justify-center rounded-full bg-white/90 text-gray-700 hover:bg-white shadow" onclick="previewImage('../<?= htmlspecialchars($it['encoded']) ?>')"><i class="fa fa-eye"></i></button>
+                                        <?php else: ?>
+                                            <a aria-label="View file" href="../<?= htmlspecialchars($it['encoded']) ?>" target="_blank" class="h-9 w-9 flex items-center justify-center rounded-full bg-white/90 text-gray-700 hover:bg-white shadow"><i class="fa fa-eye"></i></a>
+                                        <?php endif; ?>
+                                        <a aria-label="Download attachment" href="../<?= htmlspecialchars($it['encoded']) ?>" download class="h-9 w-9 flex items-center justify-center rounded-full bg-white/90 text-primary-600 hover:bg-white shadow"><i class="fa fa-download"></i></a>
+                                    </div>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    <?php endif; ?>
                 </div>
                 <aside class="md:col-span-2 space-y-6">
                     <div class="rounded-2xl border border-primary-100 bg-white/80 p-6 shadow-sm">
@@ -163,5 +244,30 @@ $displayId = 'COMP-'.str_pad($complaint['Complaint_ID'],3,'0',STR_PAD_LEFT);
         </section>
     </main>
     <?php include("../chatbot/bpamis_case_assistant.php"); ?>
+    <!-- Lightbox Modal -->
+    <div id="imgLightbox" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 p-6">
+        <div class="relative max-w-5xl w-full">
+            <button type="button" onclick="closePreview()" class="absolute -top-10 right-0 text-white bg-white/10 hover:bg-white/20 rounded-full w-10 h-10 flex items-center justify-center" aria-label="Close preview"><i class="fa fa-times text-lg"></i></button>
+            <img id="lightboxImg" src="" alt="Preview" class="w-full max-h-[78vh] object-contain rounded-xl shadow-2xl ring-1 ring-white/20" />
+        </div>
+    </div>
+    <script>
+        function previewImage(src){
+            const lb=document.getElementById('imgLightbox');
+            const img=document.getElementById('lightboxImg');
+            img.src=src;
+            lb.classList.remove('hidden');
+            lb.classList.add('flex');
+        }
+        function closePreview(){
+            const lb=document.getElementById('imgLightbox');
+            const img=document.getElementById('lightboxImg');
+            img.src='';
+            lb.classList.add('hidden');
+            lb.classList.remove('flex');
+        }
+        document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closePreview(); }});
+        document.getElementById('imgLightbox').addEventListener('click',e=>{ if(e.target.id==='imgLightbox'){ closePreview(); }});
+    </script>
 </body>
 </html>

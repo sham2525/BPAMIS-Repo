@@ -5,8 +5,17 @@ if(!isset($_SESSION['user_id'])){ header('Location: ../login.php'); exit; }
 $externalId = (int)$_SESSION['user_id'];
 $caseId = isset($_GET['case_id']) ? (int)$_GET['case_id'] : 0; if($caseId<=0){ header('Location: view_cases.php'); exit; }
 
+// Detect optional case_type & attachments in complaint_info
+$hasCaseType=false; $hasAttachment=false;
+if($r=$conn->query("SHOW COLUMNS FROM complaint_info LIKE 'case_type'")){ if($r->num_rows>0) $hasCaseType=true; $r->close(); }
+if($r=$conn->query("SHOW COLUMNS FROM complaint_info LIKE 'Attachment_Path'")){ if($r->num_rows>0) $hasAttachment=true; $r->close(); }
+
+$selectCols = "ci.Case_ID, ci.Case_Status, ci.Date_Opened, ci.Complaint_ID, co.Complaint_Title, co.Complaint_Details, co.Status AS Complaint_Status, co.external_complainant_id".
+    ($hasCaseType? ", co.case_type" : "") .
+    ($hasAttachment? ", co.Attachment_Path" : "");
+
 // Fetch case ensuring external complainant ownership
-$stmt = $conn->prepare("SELECT ci.Case_ID, ci.Case_Status, ci.Date_Opened, ci.Complaint_ID, co.Complaint_Title, co.Complaint_Details, co.Status AS Complaint_Status, co.external_complainant_id
+$stmt = $conn->prepare("SELECT $selectCols
                         FROM case_info ci
                         INNER JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID
                         WHERE ci.Case_ID = ? AND co.external_complainant_id = ? LIMIT 1");
@@ -17,12 +26,26 @@ if($res->num_rows===0){ $stmt->close(); header('Location: view_cases.php?error=n
 $case=$res->fetch_assoc();
 $stmt->close();
 
-// Hearings list
-$hearings=[];
-if($hStmt=$conn->prepare("SELECT hearingTitle, hearingDateTime, place, participant, remarks FROM schedule_list WHERE Case_ID = ? ORDER BY hearingDateTime ASC")){
-    $hStmt->bind_param('i',$caseId);
-    $hStmt->execute(); $hRes=$hStmt->get_result(); while($row=$hRes->fetch_assoc()){ $hearings[]=$row; } $hStmt->close();
+// Prepare case type display
+$caseTypeRaw = $hasCaseType ? ($case['case_type'] ?? '') : '';
+$formattedCaseType = $caseTypeRaw ? ucwords(strtolower($caseTypeRaw)) : '';
+$caseTypeClasses = '';
+if($formattedCaseType){
+    $caseTypeClasses = match(strtolower($formattedCaseType)){
+        'criminal' => 'bg-red-50 text-red-600 border border-red-200',
+        'civil' => 'bg-gray-50 text-gray-600 border border-gray-200',
+        default => 'bg-primary-50 text-primary-600 border border-primary-200'
+    };
 }
+
+// Attachment parsing
+$attachments=[];
+if($hasAttachment && !empty($case['Attachment_Path'])){
+    $parts = array_filter(array_map('trim', explode(';',$case['Attachment_Path'])));
+    foreach($parts as $p){
+        if(!$p) continue; $clean=str_replace('\\','/',$p); $clean=preg_replace('#\.{2,}#','',$clean); $clean=ltrim($clean,'/'); if($clean==='') continue; $ext=strtolower(pathinfo($clean,PATHINFO_EXTENSION)); $type=in_array($ext,['png','jpg','jpeg','gif','webp','bmp'])? 'image':($ext==='pdf'?'pdf':'file'); $attachments[]=['path'=>$clean,'ext'=>$ext,'type'=>$type]; }
+}
+function encode_path($rel){ return implode('/', array_map('rawurlencode', explode('/', $rel))); }
 
 function relative_time($date){ if(!$date) return ''; $ts=strtotime($date); $diff=time()-$ts; if($diff<60) return 'just now'; $units=[31536000=>'year',2592000=>'month',604800=>'week',86400=>'day',3600=>'hour',60=>'minute']; foreach($units as $secs=>$label){ if($diff>=$secs){ $v=floor($diff/$secs); return $v.' '.$label.($v>1?'s':'').' ago'; } } return 'just now'; }
 
@@ -37,6 +60,16 @@ $style = $statusMap[strtolower($status)] ?? ['badge'=>'bg-gray-50 text-gray-700 
 
 $caseDisplayId = 'CASE-'.str_pad($case['Case_ID'],3,'0',STR_PAD_LEFT);
 $complaintDisplayId = 'COMP-'.str_pad($case['Complaint_ID'],3,'0',STR_PAD_LEFT);
+// Ensure attachment encode helper
+if(!function_exists('encode_path')){
+    function encode_path($rel){
+        $rel = str_replace('\\','/',$rel);
+        $rel = preg_replace('#\.\.+#','',$rel);
+        $rel = ltrim($rel,'/');
+        $segments = array_filter(explode('/', $rel), fn($s)=>$s!=='');
+        return implode('/', array_map('rawurlencode', $segments));
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -47,7 +80,7 @@ $complaintDisplayId = 'COMP-'.str_pad($case['Complaint_ID'],3,'0',STR_PAD_LEFT);
     <script src="https://cdn.tailwindcss.com"></script>
     <script>tailwind.config={theme:{extend:{colors:{primary:{50:'#f0f7ff',100:'#e0effe',200:'#bae2fd',300:'#7cccfd',400:'#36b3f9',500:'#0c9ced',600:'#0281d4',700:'#026aad',800:'#065a8f',900:'#0a4b76'}},animation:{'float':'float 10s ease-in-out infinite','fade-in':'fadeIn .4s ease-out'},keyframes:{float:{'0%,100%':{transform:'translateY(0)'},'50%':{transform:'translateY(-16px)'}},fadeIn:{'0%':{opacity:0},'100%':{opacity:1}}}}}};</script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" />
-    <style>.glass{background:linear-gradient(135deg,rgba(255,255,255,0.85),rgba(255,255,255,0.62));backdrop-filter:blur(12px) saturate(140%);-webkit-backdrop-filter:blur(12px) saturate(140%);}</style>
+    <style>.glass{background:linear-gradient(135deg,rgba(255,255,255,0.85),rgba(255,255,255,0.62));backdrop-filter:blur(12px) saturate(140%);-webkit-backdrop-filter:blur(12px) saturate(140%);} </style>
 </head>
 <body class="bg-gray-50 font-sans relative overflow-x-hidden min-h-screen">
     <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
@@ -66,7 +99,13 @@ $complaintDisplayId = 'COMP-'.str_pad($case['Complaint_ID'],3,'0',STR_PAD_LEFT);
             <header class="relative flex flex-col md:flex-row md:items-start gap-8 mb-6">
                 <div class="flex items-center"><div class="w-20 h-20 rounded-2xl bg-white/60 backdrop-blur flex items-center justify-center ring-4 ring-primary-100 shadow-inner"><i class="fa fa-gavel text-primary-600 text-3xl"></i></div></div>
                 <div class="flex-1 min-w-0">
-                    <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-gray-800 flex flex-wrap items-center gap-3"><span class="bg-clip-text text-transparent bg-gradient-to-r from-primary-700 to-primary-500">Case Details</span><span class="px-3 py-1 text-xs font-semibold rounded-full border <?= $style['badge'] ?>"><?= htmlspecialchars($status) ?></span></h1>
+                    <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-gray-800 flex flex-wrap items-center gap-3">
+                        <span class="bg-clip-text text-transparent bg-gradient-to-r from-primary-700 to-primary-500">Case Details</span>
+                        <?php if($formattedCaseType): ?>
+                            <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold <?= $caseTypeClasses ?>"><i class="fa fa-scale-balanced text-[11px]"></i> <?= htmlspecialchars($formattedCaseType) ?></span>
+                        <?php endif; ?>
+                        <span class="px-3 py-1 text-xs font-semibold rounded-full border <?= $style['badge'] ?>"><?= htmlspecialchars($status) ?></span>
+                    </h1>
                     <div class="mt-4 flex flex-wrap gap-4 text-sm text-gray-600">
                         <span class="inline-flex items-center gap-1"><i class="fa fa-hashtag text-primary-500"></i> <?= htmlspecialchars($caseDisplayId) ?></span>
                         <span class="inline-flex items-center gap-1"><i class="fa fa-file-alt text-primary-500"></i> <?= htmlspecialchars($complaintDisplayId) ?></span>
@@ -80,8 +119,10 @@ $complaintDisplayId = 'COMP-'.str_pad($case['Complaint_ID'],3,'0',STR_PAD_LEFT);
                     <div>
                         <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-3">Linked Complaint</h2>
                         <div class="relative rounded-xl border border-primary-100/70 bg-white/80 p-5 shadow-sm">
-                            <div class="absolute -top-3 left-5 px-2 text-[10px] font-semibold tracking-wide uppercase bg-primary-100 text-primary-700 rounded-full">Complaint</div>
-                            <p class="font-medium text-gray-800 leading-snug mb-2"><?= htmlspecialchars($case['Complaint_Title'] ?: 'Untitled Complaint') ?></p>
+                            <div class="absolute -top-3 left-5 px-2 text-[10px] font-semibold tracking-wide uppercase bg-primary-100 text-primary-700 rounded-full">Complaint Type</div>
+                            <p class="font-medium text-gray-800 leading-snug mb-2">
+                                <?= $formattedCaseType ? htmlspecialchars($formattedCaseType) : 'Unspecified Case Type' ?>
+                            </p>
                             <p class="text-gray-700 leading-relaxed whitespace-pre-line text-sm"><?= nl2br(htmlspecialchars($case['Complaint_Details'] ?: 'No description provided.')) ?></p>
                         </div>
                     </div>
@@ -89,27 +130,63 @@ $complaintDisplayId = 'COMP-'.str_pad($case['Complaint_ID'],3,'0',STR_PAD_LEFT);
                         <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-3">Status Notes</h2>
                         <div class="rounded-xl border border-primary-100/70 bg-white/80 p-5 shadow-sm leading-relaxed text-gray-700"><?= htmlspecialchars($style['note']) ?></div>
                     </div>
+                    <?php if(!empty($attachments)): ?>
+                    <div>
+                        <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-3">Attachments</h2>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-4" id="attachmentGallery">
+                            <?php foreach($attachments as $att): $enc = encode_path($att['path']); ?>
+                            <div class="group relative border rounded-xl bg-white/70 backdrop-blur p-2 shadow-sm hover:shadow-md transition overflow-hidden">
+                                <?php if($att['type']==='image'): ?>
+                                    <img src="../<?= htmlspecialchars($enc) ?>" alt="Attachment" class="w-full h-28 object-cover rounded-lg border cursor-pointer" onclick="previewImage('../<?= htmlspecialchars($enc) ?>')" />
+                                <?php elseif($att['type']==='pdf'): ?>
+                                    <div class="w-full h-28 flex flex-col items-center justify-center gap-2 rounded-lg border bg-white/80">
+                                        <i class="fa fa-file-pdf text-red-500 text-3xl"></i>
+                                        <span class="text-[11px] text-gray-600 truncate px-2">PDF File</span>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="w-full h-28 flex flex-col items-center justify-center gap-2 rounded-lg border bg-white/80">
+                                        <i class="fa fa-file text-gray-400 text-3xl"></i>
+                                        <span class="text-[11px] text-gray-600 truncate px-2">File</span>
+                                    </div>
+                                <?php endif; ?>
+                                <div class="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2 rounded-lg">
+                                    <?php if($att['type']==='image'): ?>
+                                        <button type="button" aria-label="Preview image" class="h-9 w-9 flex items-center justify-center rounded-full bg-white/90 text-gray-700 hover:bg-white shadow" onclick="previewImage('../<?= htmlspecialchars($enc) ?>')"><i class="fa fa-eye"></i></button>
+                                    <?php else: ?>
+                                        <a aria-label="View file" href="../<?= htmlspecialchars($enc) ?>" target="_blank" class="h-9 w-9 flex items-center justify-center rounded-full bg-white/90 text-gray-700 hover:bg-white shadow"><i class="fa fa-eye"></i></a>
+                                    <?php endif; ?>
+                                    <a aria-label="Download attachment" href="../<?= htmlspecialchars($enc) ?>" download class="h-9 w-9 flex items-center justify-center rounded-full bg-white/90 text-primary-600 hover:bg-white shadow"><i class="fa fa-download"></i></a>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <?php endif; ?>
                     <div>
                         <h2 class="text-sm font-semibold tracking-wider text-gray-500 uppercase mb-4 flex items-center gap-2"><i class="fa fa-scale-balanced text-primary-500"></i> Hearings & Schedule</h2>
-                        <?php if(empty($hearings)): ?>
-                            <div class="rounded-xl border border-dashed border-primary-100/70 bg-white/70 p-5 text-sm text-gray-500">No hearings have been scheduled yet.</div>
-                        <?php else: ?>
-                            <div class="space-y-4">
-                                <?php foreach($hearings as $h): ?>
-                                <div class="group relative rounded-xl border border-gray-200 bg-white/70 p-5 shadow-sm hover:border-primary-200 transition">
-                                    <div class="flex items-center justify-between gap-3 flex-wrap">
-                                        <div class="font-medium text-gray-800 flex items-center gap-2"><i class="fa fa-calendar-day text-primary-500"></i> <?= htmlspecialchars($h['hearingTitle'] ?: 'Hearing') ?></div>
-                                        <span class="text-xs px-2 py-1 rounded-md bg-primary-50 text-primary-600 border border-primary-100 font-medium"><?= $h['hearingDateTime'] ? date('M d, Y • g:i A', strtotime($h['hearingDateTime'])) : 'TBD' ?></span>
-                                    </div>
-                                    <div class="mt-3 grid sm:grid-cols-3 gap-4 text-xs text-gray-600">
-                                        <div><span class="font-semibold text-gray-500 uppercase block mb-1">Venue</span><?= htmlspecialchars($h['place'] ?: 'N/A') ?></div>
-                                        <div><span class="font-semibold text-gray-500 uppercase block mb-1">Participants</span><?= htmlspecialchars($h['participant'] ?: 'N/A') ?></div>
-                                        <div><span class="font-semibold text-gray-500 uppercase block mb-1">Remarks</span><?= htmlspecialchars($h['remarks'] ?: 'N/A') ?></div>
-                                    </div>
-                                </div>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php endif; ?>
+                        <?php
+                        // Fetch hearings (refactored without unreachable branch)
+                        $hearings=[]; if($hStmt=$conn->prepare("SELECT hearingTitle, hearingDateTime, place, participant, remarks FROM schedule_list WHERE Case_ID = ? ORDER BY hearingDateTime ASC")){ $hStmt->bind_param('i',$caseId); $hStmt->execute(); $hRes=$hStmt->get_result(); while($row=$hRes->fetch_assoc()){ $hearings[]=$row; } $hStmt->close(); }
+                        if(empty($hearings)){
+                            echo '<div class="rounded-xl border border-dashed border-primary-100/70 bg-white/70 p-5 text-sm text-gray-500">No hearings have been scheduled yet.</div>';
+                        } else {
+                            echo '<div class="space-y-4">';
+                            foreach($hearings as $h){
+                                echo '<div class="group relative rounded-xl border border-gray-200 bg-white/70 p-5 shadow-sm hover:border-primary-200 transition">';
+                                echo '<div class="flex items-center justify-between gap-3 flex-wrap">';
+                                echo '<div class="font-medium text-gray-800 flex items-center gap-2"><i class="fa fa-calendar-day text-primary-500"></i> '.htmlspecialchars($h['hearingTitle'] ?: 'Hearing').'</div>';
+                                echo '<span class="text-xs px-2 py-1 rounded-md bg-primary-50 text-primary-600 border border-primary-100 font-medium">'.($h['hearingDateTime'] ? date('M d, Y • g:i A', strtotime($h['hearingDateTime'])) : 'TBD').'</span>';
+                                echo '</div>';
+                                echo '<div class="mt-3 grid sm:grid-cols-3 gap-4 text-xs text-gray-600">';
+                                echo '<div><span class="font-semibold text-gray-500 uppercase block mb-1">Venue</span>'.htmlspecialchars($h['place'] ?: 'N/A').'</div>';
+                                echo '<div><span class="font-semibold text-gray-500 uppercase block mb-1">Participants</span>'.htmlspecialchars($h['participant'] ?: 'N/A').'</div>';
+                                echo '<div><span class="font-semibold text-gray-500 uppercase block mb-1">Remarks</span>'.htmlspecialchars($h['remarks'] ?: 'N/A').'</div>';
+                                echo '</div>';
+                                echo '</div>';
+                            }
+                            echo '</div>';
+                        }
+                        ?>
                     </div>
                 </div>
                 <aside class="md:col-span-2 space-y-6">
@@ -121,6 +198,9 @@ $complaintDisplayId = 'COMP-'.str_pad($case['Complaint_ID'],3,'0',STR_PAD_LEFT);
                             <li class="flex items-center gap-2"><i class="fa fa-calendar text-primary-500"></i> <span class="font-medium">Opened:</span> <?= date('F d, Y', strtotime($case['Date_Opened'])) ?></li>
                             <li class="flex items-center gap-2"><i class="fa fa-clock-rotate-left text-primary-500"></i> <span class="font-medium">Relative:</span> <?= relative_time($case['Date_Opened']) ?></li>
                             <li class="flex items-center gap-2"><i class="fa fa-tag text-primary-500"></i> <span class="font-medium">Status:</span> <?= htmlspecialchars($status) ?></li>
+                            <?php if($formattedCaseType): ?>
+                                <li class="flex items-center gap-2"><i class="fa fa-scale-balanced text-primary-500"></i> <span class="font-medium">Case Type:</span> <?= htmlspecialchars($formattedCaseType) ?></li>
+                            <?php endif; ?>
                         </ul>
                     </div>
                     <div class="rounded-2xl bg-gradient-to-br <?= ''.$style['gradient'] ?> text-white p-6 shadow-sm">
@@ -140,5 +220,25 @@ $complaintDisplayId = 'COMP-'.str_pad($case['Complaint_ID'],3,'0',STR_PAD_LEFT);
         </section>
     </main>
     <?php include("../chatbot/bpamis_case_assistant.php"); ?>
+    <div id="imgLightbox" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 p-6">
+        <div class="relative max-w-5xl w-full">
+            <button type="button" onclick="closePreview()" class="absolute -top-10 right-0 text-white bg-white/10 hover:bg-white/20 rounded-full w-10 h-10 flex items-center justify-center" aria-label="Close preview"><i class="fa fa-times text-lg"></i></button>
+            <img id="lightboxImg" src="" alt="Preview" class="w-full max-h-[78vh] object-contain rounded-xl shadow-2xl ring-1 ring-white/20" />
+        </div>
+    </div>
+    <script>
+        function previewImage(src){
+            const lb=document.getElementById('imgLightbox');
+            const img=document.getElementById('lightboxImg');
+            img.src=src; lb.classList.remove('hidden'); lb.classList.add('flex');
+        }
+        function closePreview(){
+            const lb=document.getElementById('imgLightbox');
+            const img=document.getElementById('lightboxImg');
+            img.src=''; lb.classList.add('hidden'); lb.classList.remove('flex');
+        }
+        document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closePreview(); }});
+        document.getElementById('imgLightbox').addEventListener('click',e=>{ if(e.target.id==='imgLightbox'){ closePreview(); }});
+    </script>
 </body>
 </html>
