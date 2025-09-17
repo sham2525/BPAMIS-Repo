@@ -84,7 +84,7 @@ if ($resident_id > 0) {
                     <p class="text-xs text-gray-500">Signed in as</p>
                      <p class="text-sm font-medium text-gray-800"><?= htmlspecialchars($full_name) ?></p>
                 </div>
-                <a href="#" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 transition-colors">
+                <a href="profile.php" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 transition-colors">
                     <i class="fas fa-user-circle mr-3 text-blue-500"></i>
                     <span>Your Profile</span>
                 </a>

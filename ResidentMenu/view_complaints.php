@@ -65,24 +65,9 @@ $rejectedComplaints = $conn->query("
 $stmt->close();
 $conn->close();
 
-$perPage = 7;
-
-// Get current page from URL, default to 1
-$page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int) $_GET['page'] : 1;
-
-// Calculate the starting index
-$start = ($page - 1) * $perPage;
-
-// Get total complaints count
+// We now load all complaints for client-side filtering (no slicing)
 $totalComplaints = count($complaints);
-
-// Slice the complaints for the current page
-$complaintsToDisplay = array_slice($complaints, $start, $perPage);
-
-// Calculate total pages
-$totalPages = ceil($totalComplaints / $perPage);
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -143,6 +128,9 @@ $totalPages = ceil($totalComplaints / $perPage);
         }
         .table-row:hover {
             background-color: #f0f7ff;
+        }
+        .c-chip.active {
+            box-shadow: 0 0 0 2px rgba(59,130,246,.3);
         }
     </style>
 </head>
@@ -218,7 +206,7 @@ $totalPages = ceil($totalComplaints / $perPage);
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
                         <div class="md:col-span-5 relative group">
-                            <input id="searchInput" type="text" placeholder="Search by ID, title, status or description..." class="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200/80 bg-white/70 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 placeholder:text-gray-400 text-sm transition" />
+                            <input id="searchInput" type="text" placeholder="Search by ID, status or description..." class="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200/80 bg-white/70 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 placeholder:text-gray-400 text-sm transition" />
                             <i class="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-primary-400 group-focus-within:text-primary-500 transition"></i>
                         </div>
                         <div class="md:col-span-2 relative">
@@ -259,7 +247,7 @@ $totalPages = ceil($totalComplaints / $perPage);
     <div class="w-full mt-8 px-4 pb-16">
         <div class="max-w-7xl mx-auto bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden p-4 md:p-6">
             <div id="complaintsContainer" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <?php foreach ($complaintsToDisplay as $complaint): 
+                <?php foreach ($complaints as $complaint): 
                     $status = $complaint['Status'];
                     $statusClass = match($status){
                         'Resolved' => 'text-green-700 bg-green-50 border border-green-200',
@@ -278,8 +266,20 @@ $totalPages = ceil($totalComplaints / $perPage);
                         'resolved' => 'This complaint was successfully resolved by the barangay.',
                         default => 'No resolution information available.'
                     };
+                    $searchBlob = strtolower(
+                        'COMP-' . str_pad($complaint['Complaint_ID'],3,'0',STR_PAD_LEFT).' '.
+                        ($complaint['Complaint_Title'] ?? '').' '.
+                        $status.' '.
+                        $fullDesc
+                    );
                 ?>
-                <div class="complaint-card group relative bg-white/80 backdrop-blur rounded-xl border border-gray-100 p-4 flex flex-col gap-3 hover:-translate-y-[2px] hover:shadow-md transition-all" data-status="<?= strtolower($status) ?>" data-date="<?= htmlspecialchars($filedDate) ?>" data-id-text="<?= 'COMP-' . str_pad($complaint['Complaint_ID'],3,'0',STR_PAD_LEFT) ?>">
+                <div class="complaint-card bg-white/80 backdrop-blur rounded-xl border border-gray-100 p-4 flex flex-col gap-3 hover:-translate-y-[2px] hover:shadow-md transition-all" 
+                     data-status="<?= strtolower($status) ?>" 
+                     data-date="<?= htmlspecialchars($filedDate) ?>" 
+                     data-id-text="<?= 'COMP-' . str_pad($complaint['Complaint_ID'],3,'0',STR_PAD_LEFT) ?>" 
+                     data-title="<?= htmlspecialchars(strtolower($complaint['Complaint_Title'])) ?>" 
+                     data-desc="<?= htmlspecialchars(strtolower($fullDesc)) ?>" 
+                     data-search="<?= htmlspecialchars($searchBlob) ?>">
                     <div class="flex items-start justify-between gap-2">
                         <div class="flex flex-col">
                             <span class="text-[11px] font-mono tracking-wide text-gray-500">
@@ -303,16 +303,74 @@ $totalPages = ceil($totalComplaints / $perPage);
                 </div>
                 <?php endforeach; ?>
             </div>
+            <div id="noResults" class="hidden mt-6 p-8 border-2 border-dashed border-primary-200 rounded-xl text-center text-primary-700 bg-primary-50/40">
+                <i class="fa-solid fa-circle-exclamation text-primary-500 text-2xl mb-2"></i>
+                <p class="font-medium">No complaints match your filters.</p>
+                <p class="text-sm opacity-80">Try adjusting status, date filters, or clearing the search.</p>
+            </div>
             <div class="mt-6 flex items-center justify-between text-xs text-gray-600 flex-col md:flex-row gap-3">
-                <div id="visibleCount" class="px-2.5 py-1 rounded-full bg-primary-50 text-primary-600 border border-primary-100 font-medium">Showing <?= count($complaintsToDisplay) ?> items</div>
-                <div class="flex items-center gap-1">
-                    <!-- Pagination (unchanged logic) -->
-                    <a href="?page=<?= max(1, $page - 1) ?>" class="px-3 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition <?= $page <= 1 ? 'opacity-50 pointer-events-none' : '' ?>">Prev</a>
-                    <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-                        <a href="?page=<?= $i ?>" class="px-3 py-1 rounded-lg text-gray-600 border <?= $page == $i ? 'bg-primary-500 text-white border-primary-500' : 'border-gray-200 hover:bg-gray-50' ?> transition text-xs font-medium"><?= $i ?></a>
-                    <?php endfor; ?>
-    
-    </script>
+                <div id="visibleCount" class="px-2.5 py-1 rounded-full bg-primary-50 text-primary-600 border border-primary-100 font-medium">Showing <?= $totalComplaints ?> items</div>
+                <div class="text-[11px] text-gray-400">Client-side filtering enabled</div>
+            </div>
+        </div>
+    </div>
     <?php include("../chatbot/bpamis_case_assistant.php")?>
+    <script>
+    (function(){
+        const cards=[...document.querySelectorAll('.complaint-card')];
+        const statusChips=document.getElementById('statusChips')?document.querySelectorAll('#statusChips .c-chip'):[];
+        const searchInput=document.getElementById('searchInput');
+        const monthFilter=document.getElementById('monthFilter');
+        const yearFilter=document.getElementById('yearFilter');
+        const sortOrder=document.getElementById('sortOrder');
+        const resetBtn=document.getElementById('resetFilters');
+        const visibleCount=document.getElementById('visibleCount');
+        const noResults=document.getElementById('noResults');
+
+        function parseDate(ds){return new Date(ds.replace(' ','T'));}
+        function apply(){
+            const q=(searchInput?.value||'').toLowerCase();
+            const active=document.querySelector('#statusChips .c-chip.active');
+            const statusFilter=active?active.dataset.status.toLowerCase():'';
+            const m=monthFilter?monthFilter.value:''; const y=yearFilter?yearFilter.value:'';
+            let vis=[];
+            cards.forEach(c=>{
+                const status=c.dataset.status; // already lowercase
+                const blob=c.dataset.search;
+                const dstr=c.dataset.date || '';
+                let keep=true;
+                if(statusFilter && status!==statusFilter) keep=false;
+                if(keep && q && !blob.includes(q)) keep=false;
+                if(keep && (m||y)){
+                    if(dstr){
+                        const d=parseDate(dstr);
+                          if(m && String(d.getMonth()+1).padStart(2,'0')!==m) keep=false;
+                          if(y && String(d.getFullYear())!==y) keep=false;
+                    } else keep=false;
+                }
+                c.classList.toggle('hidden',!keep);
+                if(keep) vis.push(c);
+            });
+            // sort
+            if(sortOrder){
+                const o=sortOrder.value;
+                vis.sort((a,b)=>{
+                    const da=parseDate(a.dataset.date).getTime();
+                    const db=parseDate(b.dataset.date).getTime();
+                    return o==='desc'? db-da : da-db;
+                });
+                const cont=document.getElementById('complaintsContainer');
+                vis.forEach(v=>cont.appendChild(v));
+            }
+            visibleCount.textContent='Showing '+vis.length+' item'+(vis.length!==1?'s':'');
+            noResults.classList.toggle('hidden', vis.length!==0);
+        }
+        let timer; if(searchInput) searchInput.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(apply,200);});
+        statusChips.forEach(ch=>ch.addEventListener('click',()=>{statusChips.forEach(c=>c.classList.remove('active','bg-primary-600','text-white')); if(ch.dataset.status===''){ch.classList.add('bg-primary-600','text-white');} ch.classList.add('active'); apply();}));
+        [monthFilter,yearFilter,sortOrder].forEach(sel=> sel && sel.addEventListener('change',apply));
+        if(resetBtn) resetBtn.addEventListener('click',()=>{ if(searchInput) searchInput.value=''; if(monthFilter) monthFilter.value=''; if(yearFilter) yearFilter.value=''; if(sortOrder) sortOrder.value='desc'; statusChips.forEach(c=>c.classList.remove('active','bg-primary-600','text-white')); const all=document.querySelector('#statusChips .c-chip[data-status=""]'); if(all){all.classList.add('active','bg-primary-600','text-white');} apply(); });
+        apply();
+    })();
+    </script>
 </body>
 </html>
