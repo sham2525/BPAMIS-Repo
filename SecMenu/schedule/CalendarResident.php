@@ -17,6 +17,7 @@ if ($val->num_rows == 0) {
 }
 
 $events = [];
+$hearings_list = [];
 $hearing_stmt = $conn->prepare("
     SELECT sl.hearingID, sl.hearingTitle, sl.hearingDateTime, sl.remarks, ci.Case_ID
     FROM barangay_case_management.schedule_list sl
@@ -36,7 +37,15 @@ while ($r = $hearing_res->fetch_assoc()) {
     'type' => 'hearing',
     'description' => $r['remarks'],
     'sdate' => $sdate,
-    'color' => 'rgba(124, 58, 237, 0.7)' // purple for hearing
+    'color' => 'rgba(124, 58, 237, 0.7)', // purple for hearing
+    'case_id' => $r['Case_ID']
+  ];
+  $hearings_list[] = [
+    'hearing_id' => $r['hearingID'],
+    'hearing_title' => $r['hearingTitle'],
+    'hearing_datetime' => $r['hearingDateTime'],
+    'case_id' => $r['Case_ID'],
+    'sdate' => $sdate
   ];
 }
 $hearing_stmt->close();
@@ -120,7 +129,8 @@ while ($c = $case_res->fetch_assoc()) {
       'phase_color' => $phase_color,
       'phase_icon' => $phase_icon,
       'phase_days_left' => $phase_days_left,
-      'color' => $phase_color
+      'color' => $phase_color,
+      'case_id' => $c['Case_ID']
     ];
   }
 }
@@ -130,6 +140,7 @@ $conn->close();
 
 $events_json = json_encode($events);
 $cases_json = json_encode($cases);
+$hearings_json = json_encode($hearings_list);
 ?>
 <!doctype html>
 <html lang="en">
@@ -157,7 +168,6 @@ $cases_json = json_encode($cases);
     }
 
     #calendar-wrapper {
-      flex: 1 1 auto;
       display: flex;
       padding: 0.8rem 0.8rem 0.5rem 0.5rem;
     }
@@ -536,21 +546,7 @@ $cases_json = json_encode($cases);
       box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
     }
 
-    /* Case selector styling */
-    #caseSelector {
-      background: rgba(255, 255, 255, 0.9);
-      border: 1.5px solid #bae6fd;
-      border-radius: 10px;
-      color: #0281d4;
-      font-weight: 500;
-      transition: all 0.3s ease;
-    }
-
-    #caseSelector:focus {
-      outline: none;
-      border-color: #0281d4;
-      box-shadow: 0 0 0 3px rgba(2, 129, 212, 0.1);
-    }
+    /* Hearing selector removed */
 
     /* Phase indicator styling */
     .phase-indicator {
@@ -795,11 +791,11 @@ $cases_json = json_encode($cases);
 </head>
 
 <body>
-  <div id="calendar-wrapper">
-    <div id="calendar" class="relative z-10"></div>
-  </div>
 
-
+  
+    <div class="max-w-7xl mb-12 p-3 sm:p-3 lg:p-0">
+      <div id="calendar" class="relative z-50"></div>
+    </div>
 
       <!-- Modal -->
       <div id="eventModal" class="fixed inset-0 hidden flex items-center justify-center z-50">
@@ -821,10 +817,13 @@ $cases_json = json_encode($cases);
     </div>
 
     <script>
+      // Compact mode flag (hide hearing selector/status when embedded on resident home)
+      const isCompact = <?php echo (isset($_GET['compact']) && $_GET['compact'] == '1') ? 'true' : 'false'; ?>;
 
-      document.addEventListener('DOMContentLoaded', function () {
+  document.addEventListener('DOMContentLoaded', function () {
         const rawEvents = <?= $events_json ?>;
         const casesData = <?= $cases_json ?>;
+  const hearingsData = <?= $hearings_json ?>;
 
         const fcEvents = rawEvents.map(ev => {
           const base = {
@@ -847,13 +846,16 @@ $cases_json = json_encode($cases);
               current_phase: ev.current_phase || 'mediation',
               phase_color: ev.phase_color || '#facc15',
               phase_icon: ev.phase_icon || '⚖️',
-              phase_days_left: ev.phase_days_left || 15
+              phase_days_left: ev.phase_days_left || 15,
+              case_id: ev.case_id || null
             };
           } else {
             base.extendedProps = {
               type: 'hearing',
               description: ev.description || '',
               sdate: ev.sdate || '',
+              case_id: ev.case_id || null,
+              hearing_id: ev.id ? ev.id.replace('hearing_','') : null
             };
             if (ev.end) base.end = ev.end;
             base.display = 'block';
@@ -892,8 +894,7 @@ $cases_json = json_encode($cases);
                   btn.classList.remove('active-filter');
                 });
                 document.querySelector('.fc-allBtn-button').classList.add('active-filter');
-                calendar.removeAllEventSources();
-                calendar.addEventSource(fcEvents);
+                applyCompositeFilter();
               }
             },
             casesBtn: {
@@ -903,8 +904,7 @@ $cases_json = json_encode($cases);
                   btn.classList.remove('active-filter');
                 });
                 document.querySelector('.fc-casesBtn-button').classList.add('active-filter');
-                calendar.removeAllEventSources();
-                calendar.addEventSource(fcEvents.filter(e => e.extendedProps.type === 'case'));
+                applyCompositeFilter();
               }
             },
             hearingsBtn: {
@@ -914,8 +914,7 @@ $cases_json = json_encode($cases);
                   btn.classList.remove('active-filter');
                 });
                 document.querySelector('.fc-hearingsBtn-button').classList.add('active-filter');
-                calendar.removeAllEventSources();
-                calendar.addEventSource(fcEvents.filter(e => e.extendedProps.type === 'hearing'));
+                applyCompositeFilter();
               }
             }
           },
@@ -990,6 +989,22 @@ $cases_json = json_encode($cases);
           }
         });
 
+        // Helper to (re)apply current filtering considering only top filter buttons
+        function applyCompositeFilter() {
+          if (!calendar) { console.warn('Calendar not initialized yet for filtering'); return; }
+          const activeTop = document.querySelector('.fc-button.custom-filter.active-filter');
+          let topMode = 'all';
+          if (activeTop) {
+            if (activeTop.classList.contains('fc-casesBtn-button')) topMode = 'cases';
+            else if (activeTop.classList.contains('fc-hearingsBtn-button')) topMode = 'hearings';
+          }
+          let filtered = fcEvents.slice();
+          if (topMode === 'cases') filtered = filtered.filter(e => e.extendedProps.type === 'case');
+          else if (topMode === 'hearings') filtered = filtered.filter(e => e.extendedProps.type === 'hearing');
+          calendar.removeAllEventSources();
+          calendar.addEventSource(filtered);
+        }
+
         // Add active class for filter buttons
         setTimeout(() => {
           document.querySelectorAll('.fc-button.fc-button-primary').forEach(btn => {
@@ -1000,6 +1015,8 @@ $cases_json = json_encode($cases);
             }
           });
           document.querySelector('.fc-allBtn-button').classList.add('active-filter');
+          // Apply initial filter once buttons are styled
+          applyCompositeFilter();
 
           // Apply enhanced glassmorphism styling to custom filter buttons
           document.querySelectorAll('.fc-button.custom-filter').forEach(btn => {
@@ -1110,34 +1127,7 @@ $cases_json = json_encode($cases);
           window.__fcDhRaf = requestAnimationFrame(adjustDayHeaders);
         });
         calendar.on('datesSet', adjustDayHeaders);
-
-        const toolbar = document.querySelector('.fc-toolbar');
-        const extras = document.createElement('div');
-        extras.id = 'calendarHeaderExtras';
-        extras.className = 'w-full flex flex-wrap items-center gap-3 mt-2';
-
-        const caseWrapper = document.createElement('div');
-        caseWrapper.id = 'caseWrapper';
-        caseWrapper.className = 'flex items-center gap-2';
-        extras.appendChild(caseWrapper);
-
-        const statusWrapper = document.createElement('div');
-        statusWrapper.id = 'caseStatusMini';
-        statusWrapper.className = 'ml-2';
-        extras.appendChild(statusWrapper);
-
-        if (toolbar && toolbar.parentNode) {
-          toolbar.parentNode.insertBefore(extras, toolbar.nextSibling);
-        } else {
-          // If toolbar not found, insert at the top of the calendar container
-          const calendarContainer = document.getElementById('calendarContainer');
-          if (calendarContainer) {
-            const calendarElement = document.getElementById('calendar');
-            calendarContainer.insertBefore(extras, calendarElement);
-          }
-        }
-
-        // No need to insert legend here - we're using the case status display instead
+        // No additional toolbar extras (hearing selector/status) for resident calendar
 
         function getStatusClass(status) {
           if (!status) return 'bg-gray-100 text-gray-800';
@@ -1189,87 +1179,8 @@ $cases_json = json_encode($cases);
           return 'bg-gray-100 text-gray-800';
         }
 
-        const caseKeys = casesData.map(c => c.Case_ID);
-
-
-        const selectableCases = casesData.filter(c => c.Case_Status.toLowerCase() !== 'resolved');
-
-        if (selectableCases.length === 0) {
-          caseWrapper.innerHTML = `<div class="text-sm text-gray-500">No active cases</div>`;
-          statusWrapper.innerHTML = '';
-        } else if (selectableCases.length === 1) {
-          const c = selectableCases[0];
-          caseWrapper.innerHTML = `
-            <div class="px-3 py-1 rounded-lg ${statusBgColor(c.Case_Status)} text-xs flex items-center gap-2 transition-all duration-300 hover:shadow-md status-indicator backdrop-blur-sm border border-gray-200">
-                <span>Status: ${escapeHtml(c.Case_Status)}</span>
-                <span>• Days Passed: ${c.Days_Passed} • Days Left: ${c.Days_Left}</span>
-            </div>
-        `;
-        } else {
-          const sel = document.createElement('select');
-          sel.id = 'caseSelector';
-          sel.className = 'border rounded-lg px-3 py-2 text-sm bg-white/90 backdrop-blur-sm border-blue-200 text-blue-700 font-medium transition-all duration-300 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200';
-
-          selectableCases.forEach(c => {
-            const opt = document.createElement('option');
-            opt.value = c.Case_ID;
-            opt.textContent = c.Complaint_Title;
-            sel.appendChild(opt);
-          });
-          caseWrapper.innerHTML = `<div class="text-sm font-medium text-indigo-700">Case:</div>`;
-          caseWrapper.appendChild(sel);
-
-          const showCaseMini = (caseID) => {
-            const c = casesData.find(x => x.Case_ID == caseID);
-            if (!c) return;
-            statusWrapper.innerHTML = `
-                <div class="px-3 py-1 rounded-lg ${statusBgColor(c.Case_Status)} text-xs flex items-center gap-2 shadow-sm transition-all duration-300 hover:shadow status-indicator backdrop-blur-sm border border-gray-200">
-                    <span>Status: ${escapeHtml(c.Case_Status)}</span>
-                    <span>• Days Passed: ${c.Days_Passed} • Days Left: ${c.Days_Left}</span>
-                </div>`;
-          };
-          sel.addEventListener('change', e => showCaseMini(e.target.value));
-          showCaseMini(sel.value);
-        }
-
-        // We're using custom filter buttons defined in customButtons, so no need for this code
-        // const filterEl = document.getElementById('eventFilter');
-        // if (filterEl) {
-        //     filterEl.addEventListener('change', function() {
-        //         const value = this.value;
-        //         calendar.removeAllEventSources();
-        //         if (value === 'all') {
-        //             calendar.addEventSource(fcEvents);
-        //         } else {
-        //             const filtered = fcEvents.filter(ev => ev.extendedProps && ev.extendedProps.type === value);
-        //             calendar.addEventSource(filtered);
-        //         }
-        //     });
-        // }
-
-        // Modal close functionality - simplified and direct approach
-        const closeBtn = document.getElementById('modalClose');
-        const modal = document.getElementById('eventModal');
-
-        if (closeBtn && modal) {
-          // Directly attach click event to the close button
-          closeBtn.onclick = function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            console.log('Modal close button clicked');
-            modal.classList.add('hidden');
-          };
-
-          // Add an HTML attribute as a fallback
-          closeBtn.setAttribute('onclick', "document.getElementById('eventModal').classList.add('hidden');");
-
-          // Close when clicking outside the modal content
-          modal.onclick = function (e) {
-            if (e.target === modal) {
-              modal.classList.add('hidden');
-            }
-          };
-        }
+        // Initialize filter for both compact and regular layouts (no hearing selector)
+        applyCompositeFilter();
 
         // Close with Escape key
         document.addEventListener('keydown', function (e) {

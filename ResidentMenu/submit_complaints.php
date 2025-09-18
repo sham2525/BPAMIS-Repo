@@ -69,6 +69,11 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
     if($description === '' || $incident_date === ''){
         $error_message = 'Please provide required fields (description, incident date).';
     } else {
+        // Server-side word count validation: 100-200 words
+        $wordCount = str_word_count(trim($description));
+        if($wordCount < 100 || $wordCount > 200){
+            $error_message = 'Description must be between 100 and 200 words. Currently: '.(int)$wordCount.' words.';
+        } else {
         // Derive Complaint_Title from description (first 60 chars)
         $complaint_title = mb_substr($description,0,60);
         if($complaint_title === '') $complaint_title = 'Complaint '.date('Y-m-d H:i');
@@ -129,7 +134,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
             $stmt = $conn->prepare("INSERT INTO COMPLAINT_INFO (Resident_ID, Respondent_ID, Complaint_Title, Complaint_Details, Date_Filed, Status) VALUES (?,?,?,?,?,?)");
             $stmt->bind_param('iissss', $resident_id, $main_respondent_id, $complaint_title, $description, $incident_date, $status);
         }
-        if($stmt && $stmt->execute()){
+        if(isset($stmt) && $stmt && empty($error_message) && $stmt->execute()){
             $complaint_id = $stmt->insert_id;
             // Insert any additional respondents to COMPLAINT_RESPONDENTS if table exists
             if(count($respondent_names) > 1){
@@ -151,10 +156,11 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
                 }
             }
             $insert_success = true;
-        } else {
+        } else if(empty($error_message)) {
             $error_message = 'Failed to save complaint.' . ($stmt? ' '.$stmt->error : '');
         }
         if($stmt) $stmt->close();
+        }
     }
 }
 ?>
@@ -224,7 +230,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
     </div>
 
    <!-- Page Heading -->
-    <header class="relative max-w-6xl mx-auto px-4 md:px-8 pt-8 animate-fade-in">
+    <header class="max-w-screen-2xl mx-auto px-5 pt-10 relative animate-fade-in">
                 <div class="relative glass rounded-2xl shadow-glow border border-white/60 ring-1 ring-primary-100/50 px-6 py-8 md:px-10 md:py-12 overflow-hidden">
                     <div class="absolute -top-10 -right-10 w-48 h-48 rounded-full bg-primary-200/60 blur-2xl"></div>
                     <div class="absolute -bottom-12 -left-12 w-64 h-64 rounded-full bg-primary-300/40 blur-3xl"></div>
@@ -246,7 +252,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
 
     <!-- Form Card -->
     <div class="w-full mt-8 px-4 pb-16">
-        <div class="w-full max-w-5xl mx-auto bg-white/95 backdrop-blur-sm rounded-2xl border border-gray-100 shadow-md p-8 md:p-10 relative overflow-hidden">
+        <div class="w-full max-w-7xl mx-auto bg-white/95 backdrop-blur-sm rounded-2xl border border-gray-100 shadow-md p-8 md:p-10 relative overflow-hidden">
             <div class="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-full opacity-70"></div>
             <div class="absolute -bottom-16 -left-16 w-56 h-56 bg-gradient-to-tr from-blue-50 to-cyan-100 rounded-full opacity-60"></div>
             <div class="relative z-10">
@@ -263,7 +269,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
                             <label for="complainant-name" class="block text-sm font-medium text-gray-700">Complainant Name</label>
                             <div class="relative">
                                 <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><i class="fa-solid fa-user"></i></span>
-                                <input type="text" id="complainant-name" value="<?= htmlspecialchars($resident_name) ?>" disabled class="w-full pl-10 pr-3 py-3 h-[46px] rounded-lg border border-gray-200 bg-gray-50 text-gray-700 focus:outline-none" />
+                                <input type="text" id="complainant-name" value="<?= htmlspecialchars($resident_name) ?>" disabled aria-disabled="true" class="w-full pl-10 pr-3 py-3 h-[70px] rounded-lg border border-gray-200 bg-white text-gray-500 focus:outline-none cursor-not-allowed pointer-events-none select-none" />
                                 <input type="hidden" name="complainant_name" value="<?= htmlspecialchars($resident_name) ?>" />
                             </div>
                         </div>
@@ -277,32 +283,42 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
                         </div>
                        
                         <div class="space-y-2">
-                            <label for="incident-date" class="block text-sm font-medium text-gray-700">Incident Date</label>
+                            <label for="incident-date" class="block text-sm font-medium text-gray-700">Incident Date <span class="text-red-500">*</span></label>
                             <div class="relative">
                                 <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><i class="fa-solid fa-calendar-day"></i></span>
                                 <input type="date" id="incident-date" name="incident_date" class="w-full pl-10 pr-3 py-3 rounded-lg border border-gray-200 bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition form-input">
                             </div>
                         </div>
                         <div class="space-y-2">
-                            <label for="incident-time" class="block text-sm font-medium text-gray-700">Incident Time (Optional)</label>
+                            <label for="incident-time" class="block text-sm font-medium text-gray-700">Incident Time <span class="text-gray-400 font-normal">(Optional)</span></label>
                             <div class="relative">
                                 <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><i class="fa-solid fa-clock"></i></span>
                                 <input type="time" id="incident-time" name="incident_time" class="w-full pl-10 pr-3 py-3 rounded-lg border border-gray-200 bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition form-input">
                             </div>
                         </div>
                         <div class="space-y-2 md:col-span-2">
-                            <label for="complaint-description" class="block text-sm font-medium text-gray-700">Description <span class="text-red-500">*</span></label>
+                            <div class="flex items-center justify-between">
+                                <label for="complaint-description" class="block text-sm font-medium text-gray-700">Description <span class="text-red-500">*</span></label>
+                                <div class="flex items-center gap-3">
+                                    
+                                    <button type="button" id="open-tips" class="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-white/80 backdrop-blur border border-gray-200 text-primary-700 hover:text-primary-800 hover:bg-white shadow-sm transition" title="Tips for a good complaint" aria-haspopup="dialog" aria-controls="tips-modal">
+                                        <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-primary-100 text-primary-600 ring-1 ring-white/60"><i class="fa fa-file-pen text-lg"></i></span>
+                                        <span class="hidden sm:inline text-[11px] font-semibold">Tips</span>
+                                    </button>
+                                </div>
+                            </div>
                             <div class="relative">
                                 <textarea id="complaint-description" name="complaint_description" rows="6" placeholder="Provide a clear and detailed description of the complaint..." class="w-full p-4 rounded-lg border border-gray-200 bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition form-input resize-y" required><?= isset($_POST['complaint_description']) && !$insert_success ? htmlspecialchars($_POST['complaint_description']) : '' ?></textarea>
+                                
                             </div>
-                            <p class="text-xs text-gray-500">Include date, time, location and involved parties if known.</p>
+                            <div class="mt-1 flex items-center justify-between">
+                                <p class="text-xs text-gray-500">Include detailed incident, location and involved parties if known. Minimum 100 words, maximum 200 words.</p>
+                                <span id="desc-word-counter" class="text-xs text-gray-500">0/200 words</span>
+                            </div>
                         </div>
                         <!-- Hidden out_of_scope field for AI classification -->
                         <input type="hidden" name="out_of_scope" id="out_of_scope" value="0">
-                        <div class="space-y-2">
-                            <label class="block text-sm font-medium text-gray-700">Status (Auto)</label>
-                            <div class="px-4 py-3 rounded-lg border border-dashed border-blue-200 bg-blue-50 text-sm text-blue-700 flex items-center gap-2"><i class="fa-solid fa-circle-info"></i> Pending</div>
-                        </div>
+                        
                     </div>
 
                     <!-- Attachments -->
@@ -355,9 +371,39 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
             const descField=document.getElementById('complaint-description');
             const dateField=document.getElementById('incident-date');
             const respondentField=document.getElementById('respondent-name');
+            const counterEl=document.getElementById('desc-word-counter');
+            const MIN_WORDS=100, MAX_WORDS=200;
+            function countWords(text){
+                return (text.trim().match(/\b\w+\b/g) || []).length;
+            }
+            function updateCounterAndValidity(){
+                const words=countWords(descField.value);
+                if(counterEl){ counterEl.textContent = `${words}/${MAX_WORDS} words`; }
+                // visual cues
+                descField.classList.remove('ring-2','ring-red-300','ring-amber-300');
+                if(words>0 && words<MIN_WORDS){
+                    descField.classList.add('ring-2','ring-amber-300');
+                } else if(words>MAX_WORDS){
+                    descField.classList.add('ring-2','ring-red-300');
+                }
+                // hard cap: trim to MAX on input for UX
+                if(words>MAX_WORDS){
+                    // Attempt to trim by words to preserve whole words
+                    const tokens = descField.value.trim().split(/(\b\w+\b)/).filter(Boolean);
+                    let w=0, out='';
+                    for(const t of tokens){
+                        if(/\b\w+\b/.test(t)){
+                            if(w>=MAX_WORDS) break; w++; out+=t;
+                        } else { out+=t; }
+                    }
+                    descField.value = out.trim();
+                }
+                return words>=MIN_WORDS && words<=MAX_WORDS;
+            }
             function refreshSubmit(){
                 const respondentFilled = respondentField && respondentField.value.trim().length>0; // Tagify stores JSON
-                const ok = descField.value.trim().length>0 && dateField.value.trim().length>0 && respondentFilled;
+                const withinRange = updateCounterAndValidity();
+                const ok = descField.value.trim().length>0 && dateField.value.trim().length>0 && respondentFilled && withinRange;
                 if(ok){
                     submitBtn.disabled=false;
                     submitBtn.classList.remove('bg-blue-400','cursor-not-allowed');
@@ -369,6 +415,8 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
                 }
             }
             ['input','change'].forEach(ev=>{descField.addEventListener(ev,refreshSubmit); dateField.addEventListener(ev,refreshSubmit); respondentField.addEventListener(ev,refreshSubmit);});
+            // initialize counter
+            updateCounterAndValidity();
             refreshSubmit();
             const inputFile=document.getElementById('complaint-attachment');
             const label=document.querySelector('label[for="complaint-attachment"]');
@@ -504,7 +552,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
 </script>
 <!-- for modal-->
 <div id="scope-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex justify-center items-center">
-    <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+    <div class="rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4 border border-white/60 bg-gradient-to-br from-blue-50 via-white to-cyan-50">
         <h2 class="text-xl font-semibold text-red-600">Possible Out-of-Scope Complaint</h2>
         <p>This complaint is outside the jurisdiction of the barangay.</p>
         <div class="flex justify-end gap-4 pt-4">
@@ -512,6 +560,44 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
         </div>
     </div>
 </div>
+
+<!-- Tips modal -->
+<div id="tips-modal" role="dialog" aria-modal="true" aria-labelledby="tips-title" class="fixed inset-0 hidden z-50 flex items-center justify-center">
+    <div id="tips-overlay" class="absolute inset-0 bg-black/40"></div>
+    <div class="relative z-10 mx-auto max-w-lg w-[92%] sm:w-full">
+        <div class="relative rounded-2xl p-6 md:p-7 border border-white/60 shadow-[0_18px_50px_-12px_rgba(14,116,144,0.25)] overflow-hidden bg-gradient-to-br from-blue-50 via-white to-cyan-50">
+            <div class="absolute -top-16 -right-16 w-56 h-56 bg-gradient-to-br from-primary-200/60 to-primary-400/40 rounded-full blur-3xl"></div>
+            <div class="absolute -bottom-20 -left-20 w-64 h-64 bg-gradient-to-tr from-white/50 to-primary-100/50 rounded-full blur-3xl"></div>
+            <div class="relative z-10">
+                <div class="flex items-start justify-between gap-4 mb-4">
+                    <div class="flex items-center gap-3">
+                        <span class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-primary-100 text-primary-600 ring-1 ring-white/60 shadow-inner"><i class="fa-solid fa-lightbulb"></i></span>
+                        <div>
+                            <h3 id="tips-title" class="text-lg font-semibold text-sky-900">Tips for a good complaint</h3>
+                            <p class="text-xs text-sky-700/80">Write clearly and stick to the facts.</p>
+                        </div>
+                    </div>
+                    <button type="button" id="close-tips" class="p-2 rounded-lg bg-white border border-white/60 text-sky-700 hover:text-sky-900 hover:bg-white shadow-sm" aria-label="Close tips">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <ul class="space-y-3 text-sm text-sky-800">
+                    <li class="flex items-start gap-3"><i class="fa-solid fa-check text-emerald-600 mt-1"></i><span><span class="font-medium">State the facts chronologically:</span> what happened, when, where, and who was involved.</span></li>
+                    <li class="flex items-start gap-3"><i class="fa-solid fa-check text-emerald-600 mt-1"></i><span><span class="font-medium">Be specific:</span> include dates, times, locations, and names if known.</span></li>
+                    <li class="flex items-start gap-3"><i class="fa-solid fa-check text-emerald-600 mt-1"></i><span><span class="font-medium">Avoid offensive language:</span> keep the tone respectful and objective.</span></li>
+                    <li class="flex items-start gap-3"><i class="fa-solid fa-check text-emerald-600 mt-1"></i><span><span class="font-medium">Describe evidence:</span> photos, messages, receipts, or witnesses (attach files if available).</span></li>
+                    <li class="flex items-start gap-3"><i class="fa-solid fa-check text-emerald-600 mt-1"></i><span><span class="font-medium">State the impact:</span> briefly explain how the incident affected you.</span></li>
+                </ul>
+                <div class="mt-5 flex justify-end">
+                    <button type="button" id="got-it-tips" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 shadow">
+                        <i class="fa-solid fa-thumbs-up"></i>
+                        Got it
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+  </div>
 
 <!-- modal script -->
 <script>
@@ -522,6 +608,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const titleField = document.getElementById('complaint-title');
     const descField = document.getElementById('complaint-description');
     const dateField = document.getElementById('incident-date');
+    // Tips modal elements
+    const tipsModal = document.getElementById('tips-modal');
+    const tipsOverlay = document.getElementById('tips-overlay');
+    const openTips = document.getElementById('open-tips');
+    const closeTips = document.getElementById('close-tips');
+    const gotItTips = document.getElementById('got-it-tips');
 
     let formSubmissionAllowed = false;
     let autoSubmitTimeout;
@@ -531,7 +623,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         e.preventDefault(); // prevent actual submission for now
         // Basic required field guard (time & attachments optional)
-        if(descField.value.trim()==='' || dateField.value.trim()===''){
+        // Enforce word range at submit time too
+        const words = (descField.value.trim().match(/\b\w+\b/g) || []).length;
+        if(descField.value.trim()==='' || dateField.value.trim()==='' || words<100 || words>200){
             // highlight if missing
             if(descField.value.trim()==='') descField.classList.add('ring-2','ring-red-300');
             if(dateField.value.trim()==='') dateField.classList.add('ring-2','ring-red-300');
@@ -570,6 +664,14 @@ document.addEventListener('DOMContentLoaded', () => {
         formSubmissionAllowed = true;
         form.submit();
     });
+
+    // Tips modal wiring
+    function showTips(){ tipsModal?.classList.remove('hidden'); }
+    function hideTips(){ tipsModal?.classList.add('hidden'); }
+    openTips?.addEventListener('click', showTips);
+    closeTips?.addEventListener('click', hideTips);
+    gotItTips?.addEventListener('click', hideTips);
+    tipsOverlay?.addEventListener('click', hideTips);
 });
 </script>
 

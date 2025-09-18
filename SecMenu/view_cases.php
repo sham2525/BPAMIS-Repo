@@ -92,8 +92,8 @@ if (!function_exists('cc')) {
     </div>
 
     <!-- Page Header (Enhanced Hero) -->
-    <div class="w-full mt-8 px-4">
-        <div class="relative gradient-bg rounded-2xl shadow-sm p-8 md:p-10 overflow-hidden max-w-7xl mx-auto">
+    <div class="relative max-w-screen-2xl mx-auto mt-8 px-4">
+        <div class="relative gradient-bg rounded-2xl shadow-sm p-8 md:p-10 overflow-hidden relative max-w-screen-2xl mx-auto">
             <div class="absolute top-0 right-0 w-72 h-72 bg-primary-100 rounded-full -mr-28 -mt-28 opacity-70 animate-[float_10s_ease-in-out_infinite]"></div>
             <div class="absolute bottom-0 left-0 w-48 h-48 bg-primary-200 rounded-full -ml-16 -mb-16 opacity-60 animate-[float_7s_ease-in-out_infinite]"></div>
             <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[620px] h-[620px] bg-gradient-to-br from-primary-50 via-white to-primary-100 opacity-30 blur-3xl rounded-full pointer-events-none"></div>
@@ -121,7 +121,7 @@ if (!function_exists('cc')) {
     </div>
     
     <div class="w-full mt-8 px-4">
-        <div class="max-w-7xl mx-auto space-y-6">
+        <div class="max-w-screen-2xl mx-auto space-y-6">
             <!-- Filters / Search Card -->
             <div class="relative bg-white/90 backdrop-blur-sm border border-gray-100 rounded-2xl shadow-sm p-6 md:p-7 overflow-hidden">
                 <div class="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br from-primary-50 to-primary-100 rounded-full opacity-70"></div>

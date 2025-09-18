@@ -93,6 +93,8 @@ $openCases = $conn->query("
     WHERE co.external_complainant_id = $external_id AND Case_Status = 'open'
 ")->fetch_assoc()['total'] ?? 0;
 
+
+
 // Percentages (guard divisions)
 $pendingComplaintsPercent = $complaintsCount ? round(($pendingComplaints / $complaintsCount) * 100) : 0;
 $caseResolvedPercent = $casesCount ? round(($resolvedCases / $casesCount) * 100) : 0;
@@ -594,23 +596,42 @@ $hearingPercent = $casesCount ? min(100, round(($scheduledHearings / max($casesC
                             <p class="text-[10px] mt-1 text-rose-800/70">Relative to total cases</p>
                         </div>
                         <!-- Chips -->
+                         
                         <div class="grid grid-cols-2 gap-3 pt-2">
+                            
                             <div class="glass rounded-xl p-4 flex items-start gap-3">
-                                <div class="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600"><i class="fa-solid fa-circle-check"></i></div>
-                                <div><p class="text-[10px] tracking-wide uppercase font-semibold text-emerald-700">Resolved</p><p class="text-lg leading-snug font-semibold text-emerald-800"><?= $resolvedCases ?></p></div>
+                                <div class="h-9 w-9 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600"><i class="fa-solid fa-folder-open"></i></div>
+                                <div><p class="text-[10px] tracking-wide uppercase font-semibold text-blue-700">Open Cases</p><p class="text-lg leading-snug font-semibold text-blue-800"><?= $openCases ?></p></div>
                             </div>
+
+                            <div class="glass rounded-xl p-4 flex items-start gap-3">
+                                <div class="h-9 w-9 rounded-lg bg-purple-100 flex items-center justify-center text-purple-600"><i class="fa-solid fa-calendar-alt"></i></div>
+                                <div><p class="text-[10px] tracking-wide uppercase font-semibold text-pruple-700">Hearings</p><p class="text-lg leading-snug font-semibold text-purple-800"><?= $scheduledHearings ?></p></div>
+                            </div>
+
                             <div class="glass rounded-xl p-4 flex items-start gap-3">
                                 <div class="h-9 w-9 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600"><i class="fa-solid fa-hourglass-half"></i></div>
                                 <div><p class="text-[10px] tracking-wide uppercase font-semibold text-amber-700">Pending Complaints</p><p class="text-lg leading-snug font-semibold text-amber-800"><?= $pendingComplaints ?></p></div>
                             </div>
                             <div class="glass rounded-xl p-4 flex items-start gap-3">
-                                <div class="h-9 w-9 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600"><i class="fa-solid fa-handshake"></i></div>
-                                <div><p class="text-[10px] tracking-wide uppercase font-semibold text-indigo-700">Mediation</p><p class="text-lg leading-snug font-semibold text-indigo-800"><?= $mediationCases ?></p></div>
+                                <div class="h-9 w-9 rounded-lg bg-yellow-100 flex items-center justify-center text-yellow-600"><i class="fa-solid fa-handshake"></i></div>
+                                <div><p class="text-[10px] tracking-wide uppercase font-semibold text-yellow-700">Mediation</p><p class="text-lg leading-snug font-semibold text-yellow-800"><?= $mediationCases ?></p></div>
+                            </div>
+                             
+                            <div class="glass rounded-xl p-4 flex items-start gap-3">
+                                <div class="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600"><i class="fa-solid fa-balance-scale"></i></div>
+                                <div><p class="text-[10px] tracking-wide uppercase font-semibold text-emerald-700">Resolution</p><p class="text-lg leading-snug font-semibold text-emerald-800"><?= $resolutionCases ?></p></div>
+                            </div>
+
+                            <div class="glass rounded-xl p-4 flex items-start gap-3">
+                                <div class="h-9 w-9 rounded-lg bg-pink-100 flex items-center justify-center text-pink-600"><i class="fa-solid fa-file"></i></div>
+                                <div><p class="text-[10px] tracking-wide uppercase font-semibold text-pink-700">Settlement</p><p class="text-lg leading-snug font-semibold text-pink-800"><?= $settlementCases ?></p></div>
                             </div>
                             <div class="glass rounded-xl p-4 flex items-start gap-3">
-                                <div class="h-9 w-9 rounded-lg bg-rose-100 flex items-center justify-center text-rose-600"><i class="fa-solid fa-gavel"></i></div>
-                                <div><p class="text-[10px] tracking-wide uppercase font-semibold text-rose-700">Hearings</p><p class="text-lg leading-snug font-semibold text-rose-800"><?= $scheduledHearings ?></p></div>
+                                <div class="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600"><i class="fa-solid fa-circle-check"></i></div>
+                                <div><p class="text-[10px] tracking-wide uppercase font-semibold text-emerald-700">Resolved</p><p class="text-lg leading-snug font-semibold text-emerald-800"><?= $resolvedCases ?></p></div>
                             </div>
+                            
                         </div>
                     </div>
                 </div>
@@ -621,13 +642,25 @@ $hearingPercent = $casesCount ? min(100, round(($scheduledHearings / max($casesC
                     <i class="fa-solid fa-calendar-days text-sky-600"></i>
                     <h2 class="text-sky-900 font-semibold tracking-tight">Upcoming Hearings</h2>
                 </div>
-                <iframe src="../SecMenu/schedule/CalendarExternal.php" class="w-full rounded-xl border border-white/40 h-[640px] bg-white/50"></iframe>
-                <div class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] text-sky-800/80">
-                    <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-purple-500/80"></span><span>Hearings</span></div>
-                    <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-amber-500/80"></span><span>Mediation</span></div>
-                    <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-emerald-500/80"></span><span>Resolution</span></div>
-                    <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-pink-500/80"></span><span>Settlement</span></div>
+                <div class="grid grid-cols-2 gap-4 text-sm text-gray-600">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 inline-block bg-purple-100 border-l-4 border-purple-600"></span>
+                        <span><i class="fas fa-gavel text-purple-600"></i> Scheduled Hearings</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 inline-block bg-amber-100 border-l-4 border-amber-500"></span>
+                        <span><i class="fas fa-handshake text-amber-500"></i> Mediation Phase</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 inline-block bg-emerald-100 border-l-4 border-emerald-600"></span>
+                        <span><i class="fas fa-balance-scale text-emerald-600"></i> Resolution Phase</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 inline-block bg-pink-100 border-l-4 border-pink-600"></span>
+                        <span><i class="fas fa-file-signature text-pink-600"></i> Settlement Phase</span>
+                    </div>
                 </div>
+                <iframe src="../SecMenu/schedule/CalendarExternal.php" class="w-full rounded-xl border border-white/40 h-[640px] bg-white/50"></iframe>
             </div>
         </div>
     </div>

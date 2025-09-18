@@ -3,14 +3,48 @@ header("Content-Type: application/json");
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-$config = include 'config.php';
-$apiKey = $config['openrouter_api_key'] ?? '';
+// Lightweight .env loader (no external dependency)
+$envPath = __DIR__ . DIRECTORY_SEPARATOR . '.env';
+if (file_exists($envPath) && is_readable($envPath)) {
+    $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || str_starts_with($line, '#')) continue;
+        $parts = explode('=', $line, 2);
+        if (count($parts) === 2) {
+            $k = trim($parts[0]);
+            $v = trim($parts[1]);
+            // Remove optional surrounding quotes
+            if ((str_starts_with($v, '"') && str_ends_with($v, '"')) || (str_starts_with($v, "'") && str_ends_with($v, "'"))) {
+                $v = substr($v, 1, -1);
+            }
+            if ($k !== '') { putenv("$k=$v"); $_ENV[$k] = $v; }
+        }
+    }
+}
 
-$input = json_decode(file_get_contents("php://input"), true);
+$config = include 'config.php';
+// Prefer environment variable; fallback to config.php value
+$apiKey = getenv('OPENROUTER_API_KEY') ?: ($config['openrouter_api_key'] ?? '');
+$apiKey = is_string($apiKey) ? trim($apiKey) : '';
+
+// Allow test shim to inject request body during local testing
+if (function_exists('chatbot_get_input')) {
+    $rawInput = chatbot_get_input();
+} else {
+    $rawInput = file_get_contents("php://input");
+}
+$input = json_decode($rawInput, true);
 $userMessage = trim(strtolower($input["message"] ?? ""));
 
 if (!$userMessage) {
     echo json_encode(["reply" => "No message received."]);
+    exit;
+}
+
+// Quick guard for missing API key to avoid confusing upstream 401s
+if (!$apiKey || !preg_match('/^sk-or-v\d+-/i', $apiKey)) {
+    echo json_encode(["reply" => "Chatbot setup error: Missing or invalid OpenRouter API key. Please set OPENROUTER_API_KEY on the server or update chatbot/config.php."]);
     exit;
 }
 
@@ -146,30 +180,79 @@ $data = [
     "max_tokens" => 500
 ];
 
-$ch = curl_init("https://openrouter.ai/api/v1/chat/completions");
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
+// Build a Referer from current host to satisfy OpenRouter identification for web apps
+$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$referer = getenv('OPENROUTER_APP_REFERER') ?: ($scheme . '://' . $host . '/');
+$appTitle = getenv('OPENROUTER_APP_TITLE') ?: 'BPAMIS Case Assistant';
+
+$headers = [
     "Content-Type: application/json",
+    "Accept: application/json",
     "Authorization: Bearer $apiKey",
-    "X-Title: BarangayBot"
-]);
-curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    // Identification headers for OpenRouter web apps
+    "Referer: $referer",
+    "X-Title: $appTitle",
+    // Helpful explicit UA
+    "User-Agent: BPAMIS/1.0 (+$referer)"
+];
 
-$response = curl_exec($ch);
-file_put_contents("log.txt", $response); // For debugging
+// function to perform the cURL request
+$performRequest = function() use ($data, $headers) {
+    $ch = curl_init("https://openrouter.ai/api/v1/chat/completions");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+    $response = curl_exec($ch);
+    $info = curl_getinfo($ch);
+    $err = curl_error($ch);
+    curl_close($ch);
+    return [$response, $info, $err];
+};
 
-if (curl_errno($ch)) {
-    echo json_encode(["reply" => "Curl Error: " . curl_error($ch)]);
+[$response, $info, $err] = $performRequest();
+$status = $info['http_code'] ?? 0;
+file_put_contents(__DIR__ . DIRECTORY_SEPARATOR . "log.txt", sprintf("[%s] HTTP %s — %s\n", date('c'), (string)$status, is_string($response) ? trim($response) : '[no body]'), FILE_APPEND);
+
+if ($err) {
+    echo json_encode(["reply" => "Curl Error: $err"]);
     exit;
 }
 
-curl_close($ch);
-
 $responseData = json_decode($response, true);
-if (isset($responseData['error'])) {
-    echo json_encode(["reply" => "OpenRouter Error: " . $responseData['error']['message']]);
-} else {
-    $botReply = $responseData["choices"][0]["message"]["content"] ?? "Sorry, I couldn’t generate a response.";
-    echo json_encode(["reply" => $botReply]);
+
+// Retry once on 401 User not found (transient identification glitch)
+if (($status === 401 || ($responseData['error']['code'] ?? null) === 401) && stripos(($responseData['error']['message'] ?? ''), 'user not found') !== false) {
+    // short backoff
+    usleep(250 * 1000);
+    [$response, $info, $err] = $performRequest();
+    $status = $info['http_code'] ?? 0;
+    file_put_contents(__DIR__ . DIRECTORY_SEPARATOR . "log.txt", sprintf("[%s] RETRY HTTP %s — %s\n", date('c'), (string)$status, is_string($response) ? trim($response) : '[no body]'), FILE_APPEND);
+    if ($err) {
+        echo json_encode(["reply" => "Curl Error (after retry): $err"]);
+        exit;
+    }
+    $responseData = json_decode($response, true);
 }
+
+if (!is_array($responseData)) {
+    echo json_encode(["reply" => "OpenRouter Error: Unexpected response from API (HTTP $status). Please try again later."]);
+    exit;
+}
+
+if (isset($responseData['error'])) {
+    $msg = $responseData['error']['message'] ?? 'Unknown error';
+    $code = $responseData['error']['code'] ?? $status;
+    echo json_encode(["reply" => "OpenRouter Error ($code): $msg"]);
+    exit;
+}
+
+$botReply = $responseData["choices"][0]["message"]["content"] ?? null;
+if (!$botReply) {
+    echo json_encode(["reply" => "Sorry, I couldn’t generate a response right now. Please try again."]);
+    exit;
+}
+
+echo json_encode(["reply" => $botReply]);

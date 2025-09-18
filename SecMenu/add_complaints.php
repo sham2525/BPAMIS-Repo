@@ -144,7 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php include '../includes/barangay_official_sec_nav.php'; ?>
 
     <!-- Page Heading -->
-    <header class="relative max-w-6xl mx-auto px-4 md:px-8 pt-8 animate-fade-in">
+    <header class="relative max-w-screen-2xl mx-auto px-4 md:px-8 pt-8 animate-fade-in">
                 <div class="relative glass rounded-2xl shadow-glow border border-white/60 ring-1 ring-primary-100/50 px-6 py-8 md:px-10 md:py-12 overflow-hidden">
                     <div class="absolute -top-10 -right-10 w-48 h-48 rounded-full bg-primary-200/60 blur-2xl"></div>
                     <div class="absolute -bottom-12 -left-12 w-64 h-64 rounded-full bg-primary-300/40 blur-3xl"></div>
@@ -165,7 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </header>
 
     <!-- Form Section -->
-    <main class="relative z-10 max-w-5xl mx-auto px-4 md:px-8 mt-10 pb-24">
+    <main class="relative z-10 max-w-7xl mx-auto px-4 md:px-8 mt-10 pb-24">
         <section class="glass rounded-2xl shadow-glow border border-white/60 ring-1 ring-primary-100/50 p-6 md:p-10 animate-fade-in">
             <div class="mb-8 flex items-center justify-between flex-wrap gap-4">
                 <h2 class="text-lg md:text-xl font-semibold text-gray-800 flex items-center gap-2"><i class="fa fa-circle-plus text-primary-500"></i> New Complaint Details</h2>

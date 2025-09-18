@@ -7,7 +7,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 // ===================== NUMERIC AGGREGATES ===================== //
 $complaintsCount = $resolvedCount = $pendingCount = $rejectedCount = 0;
-$casesCount = $mediatedCount = $resolutionCount = $settlementCount = $closedCount = $resolvedCaseCount = 0;
+$casesCount = $mediatedCount = $unresolvedCount = $resolutionCount = $settlementCount = $closedCount = $resolvedCaseCount  = $resolutionCount = $openCount = 0;
 $scheduledHearings = 0;
 
 // Complaints distribution
@@ -16,12 +16,14 @@ if ($result = $conn->query("SELECT status, COUNT(*) as count FROM complaint_info
         $status = strtolower(trim($row['status']));
         $count = (int) $row['count'];
         $complaintsCount += $count;
-        if ($status === 'resolved')
-            $resolvedCount = $count;
-        elseif ($status === 'pending')
-            $pendingCount = $count;
-        elseif ($status === 'rejected')
-            $rejectedCount = $count;
+        if ($status === 'resolved') $resolvedCount = $count;
+        elseif ($status === 'pending') $pendingCount = $count;
+        elseif ($status === 'rejected') $rejectedCount = $count;
+        elseif ($status === 'mediation') $mediatedCount = $count;
+        elseif ($status === 'open') $openCount = $count;
+        elseif ($status === 'resolution') $resolutionCount = $count;
+        elseif ($status === 'unresolved') $unresolvedCount = $count;
+        elseif ($status === 'settlement') $settlementCount = $count;
     }
 }
 
@@ -31,16 +33,13 @@ if ($result = $conn->query("SELECT case_status as status, COUNT(*) as count FROM
         $status = strtolower(trim($row['status']));
         $count = (int) $row['count'];
         $casesCount += $count;
-        if ($status === 'mediation')
-            $mediatedCount = $count;
-        elseif ($status === 'resolution')
-            $resolutionCount = $count;
-        elseif ($status === 'settlement')
-            $settlementCount = $count;
-        elseif ($status === 'close')
-            $closedCount = $count;
-        elseif ($status === 'resolved')
-            $resolvedCaseCount = $count;
+        if ($status === 'mediation') $mediatedCount = $count;
+        elseif ($status === 'resolution') $resolutionCount = $count;
+        elseif ($status === 'settlement') $settlementCount = $count;
+        elseif ($status === 'close') $closedCount = $count;
+        elseif ($status === 'resolved') $resolvedCaseCount = $count;
+        elseif ($status === 'open') $openCount = $count;
+        elseif ($status === 'unresolved') $unresolvedCount = $count;
     }
 }
 
@@ -345,7 +344,7 @@ for ($i = 5; $i >= 0; $i--) {
     <?php include '../includes/barangay_official_sec_nav.php'; ?>
 
     <!-- HEADER / INTRO -->
-    <div class="max-w-7xl mx-auto px-5 pt-10 relative">
+    <div class="max-w-screen-2xl mx-auto px-5 pt-10 relative">
         <div class="glass rounded-3xl p-8 md:p-12 overflow-hidden fade-in">
             <div class="absolute inset-0 pointer-events-none">
                 <div
@@ -403,7 +402,7 @@ for ($i = 5; $i >= 0; $i--) {
     </div>
 
     <!-- MAIN GRID -->
-    <div class="max-w-7xl mx-auto px-5 mt-10 pb-16 space-y-10">
+    <div class="max-w-screen-2xl mx-auto px-5 mt-10 pb-16 space-y-10">
         <div class="dashboard-equal-row">
             <!-- Left Column: KPIs -->
             <div class="card-flex lg:col-span-5 space-y-8 w-full">
@@ -480,6 +479,18 @@ for ($i = 5; $i >= 0; $i--) {
                         <div class="grid grid-cols-2 gap-3 pt-2">
                             <div class="glass rounded-xl p-4 flex items-start gap-3">
                                 <div
+                                    class="h-9 w-9 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+                                    <i class="fa-solid fa-folder-open"></i></div>
+                                <div>
+                                    <p class="text-[10px] tracking-wide uppercase font-semibold text-blue-700">Open Cases
+                                    </p>
+                                    <p class="text-lg leading-snug font-semibold text-blue-800"><?= $openCount ?>
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="glass rounded-xl p-4 flex items-start gap-3">
+                                <div
                                     class="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600">
                                     <i class="fa-solid fa-circle-check"></i></div>
                                 <div>
@@ -513,12 +524,46 @@ for ($i = 5; $i >= 0; $i--) {
                             </div>
                             <div class="glass rounded-xl p-4 flex items-start gap-3">
                                 <div
+                                    class="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600">
+                                    <i class="fa-solid fa-balance-scale"></i></div>
+                                <div>
+                                    <p class="text-[10px] tracking-wide uppercase font-semibold text-emerald-700">
+                                        Resolution Cases</p>
+                                    <p class="text-lg leading-snug font-semibold text-emerald-800"><?= $resolutionCount ?>
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="glass rounded-xl p-4 flex items-start gap-3">
+                                <div
+                                    class="h-9 w-9 rounded-lg bg-pink-100 flex items-center justify-center text-pink-600">
+                                    <i class="fa-solid fa-file-alt"></i></div>
+                                <div>
+                                    <p class="text-[10px] tracking-wide uppercase font-semibold text-pink-700">Settlement Cases
+                                    </p>
+                                    <p class="text-lg leading-snug font-semibold text-pink-800"><?= $settlementCount ?>
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="glass rounded-xl p-4 flex items-start gap-3">
+                                <div
                                     class="h-9 w-9 rounded-lg bg-rose-100 flex items-center justify-center text-rose-600">
                                     <i class="fa-solid fa-ban"></i></div>
                                 <div>
                                     <p class="text-[10px] tracking-wide uppercase font-semibold text-rose-700">Rejected
                                     </p>
                                     <p class="text-lg leading-snug font-semibold text-rose-800"><?= $rejectedCount ?>
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="glass rounded-xl p-4 flex items-start gap-3">
+                                <div
+                                    class="h-9 w-9 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600">
+                                    <i class="fa-solid fa-ban"></i></div>
+                                <div>
+                                    <p class="text-[10px] tracking-wide uppercase font-semibold text-gray-700">Unresolved Cases
+                                    </p>
+                                    <p class="text-lg leading-snug font-semibold text-gray-800"><?= $unresolvedCount ?>
                                     </p>
                                 </div>
                             </div>

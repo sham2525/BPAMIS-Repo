@@ -158,7 +158,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <body class="min-h-screen font-sans bg-gradient-to-br from-primary-50 via-white to-primary-100 text-gray-800 relative overflow-x-hidden bg-orbs">
 <?php include '../includes/barangay_official_sec_nav.php'; ?>
 
-<header class="relative max-w-6xl mx-auto px-4 md:px-8 pt-8 animate-fade-in">
+<header class="relative max-w-screen-2xl mx-auto px-4 md:px-8 pt-8 animate-fade-in">
     <div class="relative glass rounded-2xl shadow-glow border border-white/60 ring-1 ring-primary-100/60 px-6 py-8 md:px-10 md:py-12 overflow-hidden">
         <div class="absolute -top-10 -right-10 w-48 h-48 rounded-full bg-primary-200/60 blur-2xl"></div>
         <div class="absolute -bottom-12 -left-12 w-64 h-64 rounded-full bg-primary-300/40 blur-3xl"></div>
@@ -178,7 +178,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     </div>
 </header>
 
-<main class="relative z-10 max-w-5xl mx-auto px-4 md:px-8 mt-10 pb-24">
+<main class="relative z-10 max-w-7xl mx-auto px-4 md:px-8 mt-10 pb-24">
     <section class="glass rounded-2xl shadow-glow border border-white/60 ring-1 ring-primary-100/60 p-6 md:p-10 animate-fade-in space-y-10">
         <?php if (!empty($success_message)): ?>
             <div class="mb-4 rounded-lg border border-green-300 bg-green-50 text-green-700 px-4 py-3 text-sm flex items-start gap-2">

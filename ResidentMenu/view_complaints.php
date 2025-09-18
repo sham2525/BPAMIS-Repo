@@ -151,7 +151,7 @@ $totalComplaints = count($complaints);
     ?>
     <!-- Premium Hero Header -->
     <div class="w-full mt-8 px-4">
-        <div class="relative gradient-bg rounded-2xl shadow-sm p-8 md:p-10 overflow-hidden max-w-7xl mx-auto">
+        <div class="relative gradient-bg rounded-2xl shadow-sm p-8 md:p-10 overflow-hidden max-w-screen-2xl mx-auto px-5 pt-10 relative">
             <div class="absolute top-0 right-0 w-72 h-72 bg-primary-100 rounded-full -mr-28 -mt-28 opacity-70 animate-[float_10s_ease-in-out_infinite]"></div>
             <div class="absolute bottom-0 left-0 w-48 h-48 bg-primary-200 rounded-full -ml-16 -mb-16 opacity-60 animate-[float_7s_ease-in-out_infinite]"></div>
             <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-br from-primary-50 via-white to-primary-100 opacity-30 blur-3xl rounded-full"></div>
@@ -180,7 +180,7 @@ $totalComplaints = count($complaints);
     
     <!-- Filters & Search -->
     <div class="w-full mt-8 px-4">
-        <div class="max-w-7xl mx-auto">
+        <div class="max-w-screen-2xl mx-auto">
             <div class="relative bg-white/90 backdrop-blur-sm border border-gray-100 rounded-2xl shadow-sm p-6 md:p-7 overflow-hidden">
                 <div class="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br from-primary-50 to-primary-100 rounded-full opacity-70"></div>
                 <div class="absolute -bottom-12 -left-12 w-40 h-40 bg-gradient-to-tr from-primary-50 to-primary-100 rounded-full opacity-60"></div>
@@ -245,7 +245,7 @@ $totalComplaints = count($complaints);
 
     <!-- Complaints List -->
     <div class="w-full mt-8 px-4 pb-16">
-        <div class="max-w-7xl mx-auto bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden p-4 md:p-6">
+        <div class="max-w-screen-2xl mx-auto bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden p-4 md:p-6">
             <div id="complaintsContainer" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <?php foreach ($complaints as $complaint): 
                     $status = $complaint['Status'];
