@@ -78,61 +78,7 @@ while ($c = $case_res->fetch_assoc()) {
     'Days_Left' => $days_left
   ];
 
-  // Only add cases NOT resolved to events
-  if (strtolower($c['Case_Status']) !== 'resolved') {
-    $startDate = $c['Date_Opened'];
-    $endDate = date('Y-m-d', strtotime($startDate . ' +45 days'));  // 45 days duration
-
-    // Calculate case phases based on 15-day cycles
-    $phase_start = strtotime($startDate);
-    $current_time = time();
-    $days_since_start = floor(($current_time - $phase_start) / (24 * 60 * 60));
-
-    // Determine current phase (15-day cycles)
-    $phase_number = floor($days_since_start / 15);
-    $phase_remainder = $days_since_start % 15;
-
-    if ($phase_number == 0) {
-      $current_phase = 'mediation';
-      $phase_color = '#facc15'; // Yellow
-      $phase_icon = '';
-      $phase_days_left = 15 - $phase_remainder;
-    } elseif ($phase_number == 1) {
-      $current_phase = 'resolution';
-      $phase_color = '#22c55e'; // Green
-      $phase_icon = '';
-      $phase_days_left = 15 - $phase_remainder;
-    } elseif ($phase_number == 2) {
-      $current_phase = 'settlement';
-      $phase_color = '#a855f7'; // Violet
-      $phase_icon = '';
-      $phase_days_left = 15 - $phase_remainder;
-    } else {
-      $current_phase = 'settlement';
-      $phase_color = '#a855f7'; // Violet
-      $phase_icon = '';
-      $phase_days_left = 0;
-    }
-
-    $events[] = [
-      'id' => 'case_' . $c['Case_ID'],
-      'title' => $phase_icon . ' ' . $c['Complaint_Title'],
-      'start' => $startDate,
-      'end' => $endDate,
-      'type' => 'case',
-      'case_title' => $c['Complaint_Title'],
-      'case_status' => $c['Case_Status'],
-      'date_opened' => date("F d, Y", strtotime($startDate)),
-      'days_passed' => $days_passed,
-      'days_left' => $days_left,
-      'current_phase' => $current_phase,
-      'phase_color' => $phase_color,
-      'phase_icon' => $phase_icon,
-      'phase_days_left' => $phase_days_left,
-      'color' => $phase_color,
-      'case_id' => $c['Case_ID']
-    ];
-  }
+  // Removed adding case-span events to the calendar; only hearings will be shown
 }
 $case_stmt->close();
 
@@ -251,6 +197,16 @@ $hearings_json = json_encode($hearings_list);
       box-shadow: 0 2px 8px 0 rgba(2, 129, 212, 0.08);
     }
 
+    /* Highlight days that have any hearings (distinct from current day) */
+    .fc .fc-daygrid-day.has-hearing:not(.fc-day-today) {
+      background: linear-gradient(90deg, rgba(216, 180, 254, 0.35) 0%, rgba(243, 232, 255, 0.65) 100%) !important; /* purple tint */
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(124, 58, 237, 0.12);
+    }
+    .fc .fc-daygrid-day.has-hearing:not(.fc-day-today) .fc-daygrid-day-number {
+      color: #7c3aed; /* purple day number on hearing days */
+    }
+
     .fc .fc-event {
       border: none !important;
       padding: 10px 18px 10px 16px;
@@ -284,6 +240,31 @@ $hearings_json = json_encode($hearings_list);
       color: #0f172a !important;
       border-color: rgba(2, 129, 212, 0.4) !important;
     }
+
+    /* Icon-only hearing event styling (Month/Week views) */
+    .fc .evt-hearing { 
+      padding: 4px 6px !important; 
+      min-height: 0 !important; 
+      display: inline-flex; 
+      align-items: center; 
+      justify-content: center; 
+    }
+    .fc .evt-hearing .hearing-icon { 
+      display: inline-flex; 
+      align-items: center; 
+      justify-content: center; 
+      width: 22px; 
+      height: 22px; 
+      border-radius: 9999px; 
+      background: #eef2ff; 
+      color: #7c3aed; 
+      border: 1px solid #c7d2fe; 
+      box-shadow: inset 0 0 0 1px rgba(124,58,237,.08);
+      font-size: 12px;
+    }
+    /* Ensure default title/time are hidden if present */
+    .fc .evt-hearing .fc-event-time, 
+    .fc .evt-hearing .fc-event-title { display: none !important; }
 
     @keyframes eventFadeIn {
       from {
@@ -444,9 +425,104 @@ $hearings_json = json_encode($hearings_list);
       text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8) !important;
     }
 
+    /* ===== Enhanced List View Styling ===== */
+    /* Remove default borders and give list a clean canvas */
+    .fc-theme-standard .fc-list,
+    .fc-theme-standard .fc-list-table,
+    .fc-theme-standard td,
+    .fc-theme-standard th { border: none; }
+
+    /* Day header: pill card with subtle gradient and shadow */
+    .fc .fc-list-day-cushion {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: linear-gradient(90deg, rgba(199, 229, 248, 0.5) 0%, #f0f9ff 100%);
+      color: #0f4c75;
+      font-weight: 800;
+      letter-spacing: .3px;
+      padding: .75rem 1rem;
+      margin: .75rem 1rem .25rem 1rem;
+      border: 1px solid #e0e7ef;
+      border-radius: 12px;
+      box-shadow: 0 4px 14px rgba(2, 129, 212, 0.12);
+    }
+
+    /* Event rows: airy spacing and card-like hover */
+    .fc .fc-list-event td {
+      padding: .70rem 1rem;
+    }
+    .fc .fc-list-event:hover td {
+      background: #ffffff;
+      box-shadow: 0 8px 20px rgba(2, 129, 212, 0.14);
+      transition: box-shadow .2s ease, background .2s ease;
+    }
+
+    /* Title link styling for better prominence */
+    .fc .fc-list-event-title a {
+      color: #0f172a !important;
+      font-weight: 800 !important;
+    }
+
+    /* Time badge: compact pill */
+    .fc .fc-list-event-time {
+      background: #e6f4ff;
+      color: #0369a1;
+      border: 1px solid #b6e1f7;
+      border-radius: 9999px;
+      padding: .20rem .6rem;
+      font-weight: 700;
+      font-size: .80rem;
+    }
+
+    /* Graphic dot: consistent brand color */
+    .fc .fc-list-event-graphic .fc-list-event-dot {
+      border-color: #7c3aed; /* purple dot for hearings */
+      border-width: 6px;
+    }
+
+    /* Subtle zebra effect for readability */
+    .fc .fc-list-table tbody tr:nth-child(even) td {
+      background: rgba(248, 250, 252, 0.60);
+    }
+
+    /* Empty state for list view (copied from External) */
+    .fc .fc-list-empty td { border: none; padding: 0; }
+    .fc .fc-list-empty .fc-list-empty-cushion {
+      margin: 12px;
+      padding: 20px 18px;
+      border-radius: 16px;
+      border: 1px solid #e5e7eb;
+      background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+      color: #64748b;
+      text-align: center;
+      font-weight: 700;
+      letter-spacing: .2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 6px 18px rgba(2,129,212,0.08);
+    }
+    .fc .fc-list-empty .fc-list-empty-cushion::before {
+      content: '\1F5D3'; /* calendar emoji 🗓 (fallback) */
+      font-size: 1.2rem;
+      color: #0281d4;
+      opacity: .7;
+      display: inline-block;
+      transform: translateY(1px);
+    }
+
     /* Highlight current day in week list view */
     .fc-listWeek-view .fc-list-day.fc-day-today {
       background: linear-gradient(90deg, rgba(199, 229, 248, 0.85) 0%, #f0f9ff 100%) !important;
+    }
+
+    /* In Week view, subtly highlight the header of days that have hearings (distinct from today) */
+    .fc-timeGridWeek-view .fc-col-header-cell.has-hearing-header:not(.fc-day-today) {
+      background: linear-gradient(90deg, rgba(216, 180, 254, 0.35) 0%, rgba(243, 232, 255, 0.65) 100%) !important;
+      border-radius: 10px;
+      box-shadow: 0 1px 4px rgba(124, 58, 237, 0.12);
     }
 
     /* Highlight current day column in timeGrid views */
@@ -458,6 +534,19 @@ $hearings_json = json_encode($hearings_list);
     .fc-timeGridDay-view .fc-timegrid-slot-label.fc-day-today {
       background: linear-gradient(90deg, rgba(199, 229, 248, 0.85) 0%, #f0f9ff 100%) !important;
     }
+
+    /* Remove grid and cell lines in Week view for a clean look */
+    .fc-timeGridWeek-view .fc-scrollgrid,
+    .fc-timeGridWeek-view .fc-scrollgrid thead tr,
+    .fc-timeGridWeek-view .fc-scrollgrid tbody tr,
+    .fc-timeGridWeek-view td,
+    .fc-timeGridWeek-view th { border: 0 !important; }
+    .fc-timeGridWeek-view .fc-col-header,
+    .fc-timeGridWeek-view .fc-col-header-cell { border: 0 !important; }
+    .fc-timeGridWeek-view .fc-timegrid-slot,
+    .fc-timeGridWeek-view .fc-timegrid-axis,
+    .fc-timeGridWeek-view .fc-timegrid-divider,
+    .fc-timeGridWeek-view .fc-timegrid-slot-label { border: 0 !important; }
 
     /* Custom filter button styling */
     .fc-button.custom-filter {
@@ -825,7 +914,22 @@ $hearings_json = json_encode($hearings_list);
         const casesData = <?= $cases_json ?>;
   const hearingsData = <?= $hearings_json ?>;
 
-        const fcEvents = rawEvents.map(ev => {
+        // Build a set of dates (YYYY-MM-DD) that have at least one hearing
+        const hearingDateSet = new Set();
+        (rawEvents || []).forEach(ev => {
+          if (ev && ev.type === 'hearing' && ev.start) {
+            const d = new Date(ev.start);
+            // Normalize to local date string in YYYY-MM-DD
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            hearingDateSet.add(`${y}-${m}-${day}`);
+          }
+        });
+
+        const fcEvents = rawEvents
+          .filter(ev => ev.type === 'hearing')
+          .map(ev => {
           const base = {
             id: ev.id,
             title: ev.title,
@@ -834,38 +938,40 @@ $hearings_json = json_encode($hearings_list);
             color: ev.color || undefined,
             extendedProps: {}
           };
-
-          if (ev.type === 'case') {
-            base.extendedProps = {
-              type: 'case',
-              case_title: ev.case_title || ev.title,
-              case_status: ev.case_status || ev.case_status,
-              date_opened: ev.date_opened || ev.start,
-              days_left: ev.days_left,
-              days_passed: ev.days_passed,
-              current_phase: ev.current_phase || 'mediation',
-              phase_color: ev.phase_color || '#facc15',
-              phase_icon: ev.phase_icon || '⚖️',
-              phase_days_left: ev.phase_days_left || 15,
-              case_id: ev.case_id || null
-            };
-          } else {
-            base.extendedProps = {
-              type: 'hearing',
-              description: ev.description || '',
-              sdate: ev.sdate || '',
-              case_id: ev.case_id || null,
-              hearing_id: ev.id ? ev.id.replace('hearing_','') : null
-            };
-            if (ev.end) base.end = ev.end;
-            base.display = 'block';
-          }
+          base.extendedProps = {
+            type: 'hearing',
+            description: ev.description || '',
+            sdate: ev.sdate || '',
+            case_id: ev.case_id || null,
+            hearing_id: ev.id ? ev.id.replace('hearing_','') : null
+          };
+          if (ev.end) base.end = ev.end;
+          base.display = 'block';
           return base;
         });
 
         // calendar header
         const calendarEl = document.getElementById('calendar');
         const calendar = new FullCalendar.Calendar(calendarEl, {
+          noEventsText: 'No hearings scheduled for this period',
+          eventClassNames: function(arg){
+            // Add a class for hearing events for targeted styling
+            if (arg.event.extendedProps && arg.event.extendedProps.type === 'hearing') {
+              // Only tag in non-list views to keep list view full titles
+              if (!arg.view.type.startsWith('list')) return ['evt-hearing'];
+            }
+            return [];
+          },
+          eventContent: function(arg){
+            // Replace content with icon-only for hearing events in Month/Week views
+            const isList = arg.view.type.startsWith('list');
+            if (arg.event.extendedProps && arg.event.extendedProps.type === 'hearing' && !isList) {
+              const title = escapeHtml(arg.event.title || 'Hearing');
+              return { html: `<span class="hearing-icon" title="${title}" aria-label="${title}"><i class="fas fa-gavel"></i></span>` };
+            }
+            // default rendering for other types or list view
+            return undefined;
+          },
           eventDidMount: function (info) {
             if (info.event.extendedProps.type === 'hearing') {
               // Hide the time for hearing events in the calendar display
@@ -881,46 +987,30 @@ $hearings_json = json_encode($hearings_list);
             }, Math.random() * 300);
           },
           initialView: 'dayGridMonth',
+          dayCellClassNames: function(arg){
+            // arg.date is a Date; mark Month view cells that have hearings
+            const d = arg.date;
+            const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            if (hearingDateSet.has(key)) return ['has-hearing'];
+            return [];
+          },
+          dayHeaderClassNames: function(arg){
+            // For Week view headers, highlight days having hearings
+            const d = arg.date;
+            if (!d) return [];
+            const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            if (hearingDateSet.has(key)) return ['has-hearing-header'];
+            return [];
+          },
           headerToolbar: {
             left: 'prev,next',
             center: 'title',
             right: 'dayGridMonth,timeGridWeek,listMonth'
           },
-          customButtons: {
-            allBtn: {
-              text: 'All',
-              click: function () {
-                document.querySelectorAll('.fc-button.custom-filter').forEach(btn => {
-                  btn.classList.remove('active-filter');
-                });
-                document.querySelector('.fc-allBtn-button').classList.add('active-filter');
-                applyCompositeFilter();
-              }
-            },
-            casesBtn: {
-              text: 'Cases',
-              click: function () {
-                document.querySelectorAll('.fc-button.custom-filter').forEach(btn => {
-                  btn.classList.remove('active-filter');
-                });
-                document.querySelector('.fc-casesBtn-button').classList.add('active-filter');
-                applyCompositeFilter();
-              }
-            },
-            hearingsBtn: {
-              text: 'Hearings',
-              click: function () {
-                document.querySelectorAll('.fc-button.custom-filter').forEach(btn => {
-                  btn.classList.remove('active-filter');
-                });
-                document.querySelector('.fc-hearingsBtn-button').classList.add('active-filter');
-                applyCompositeFilter();
-              }
-            }
-          },
           views: {
-            timeGridWeek: { buttonText: '' },
-            listMonth: { buttonText: '' }
+            dayGridMonth: { buttonText: 'Month' },
+            timeGridWeek: { buttonText: 'Week' },
+            listMonth: { buttonText: 'List' }
           },
           events: fcEvents,
           height: 650,
@@ -989,86 +1079,31 @@ $hearings_json = json_encode($hearings_list);
           }
         });
 
-        // Helper to (re)apply current filtering considering only top filter buttons
+        // No custom top filter buttons; show all events by default
         function applyCompositeFilter() {
-          if (!calendar) { console.warn('Calendar not initialized yet for filtering'); return; }
-          const activeTop = document.querySelector('.fc-button.custom-filter.active-filter');
-          let topMode = 'all';
-          if (activeTop) {
-            if (activeTop.classList.contains('fc-casesBtn-button')) topMode = 'cases';
-            else if (activeTop.classList.contains('fc-hearingsBtn-button')) topMode = 'hearings';
-          }
-          let filtered = fcEvents.slice();
-          if (topMode === 'cases') filtered = filtered.filter(e => e.extendedProps.type === 'case');
-          else if (topMode === 'hearings') filtered = filtered.filter(e => e.extendedProps.type === 'hearing');
+          if (!calendar) return;
           calendar.removeAllEventSources();
-          calendar.addEventSource(filtered);
+          calendar.addEventSource(fcEvents);
         }
 
         // Add active class for filter buttons
         setTimeout(() => {
-          document.querySelectorAll('.fc-button.fc-button-primary').forEach(btn => {
-            if (btn.classList.contains('fc-allBtn-button') ||
-              btn.classList.contains('fc-casesBtn-button') ||
-              btn.classList.contains('fc-hearingsBtn-button')) {
-              btn.classList.add('custom-filter');
-            }
-          });
-          document.querySelector('.fc-allBtn-button').classList.add('active-filter');
-          // Apply initial filter once buttons are styled
+          // Initial filter: show all events
           applyCompositeFilter();
-
-          // Apply enhanced glassmorphism styling to custom filter buttons
-          document.querySelectorAll('.fc-button.custom-filter').forEach(btn => {
-            btn.style.background = 'linear-gradient(90deg, #e0f2fe 0%, #f0f9ff 100%)';
-            btn.style.color = '#0281d4';
-            btn.style.border = '1.5px solid #bae6fd';
-            btn.style.borderRadius = '12px';
-            btn.style.fontWeight = '700';
-            btn.style.fontSize = '1rem';
-            btn.style.padding = '0.75rem 1.5rem';
-            btn.style.margin = '0 0.5rem';
-            btn.style.minWidth = '80px';
-            btn.style.textAlign = 'center';
-            btn.style.transition = 'all 0.3s ease';
-            btn.style.boxShadow = '0 2px 8px rgba(2, 129, 212, 0.15)';
-            btn.style.display = 'flex';
-            btn.style.alignItems = 'center';
-            btn.style.justifyContent = 'center';
-          });
-
-          // Enhance the right toolbar chunk spacing
-          const rightToolbar = document.querySelector('.fc-toolbar-chunk.fc-right');
-          if (rightToolbar) {
-            rightToolbar.style.display = 'flex';
-            rightToolbar.style.gap = '1rem';
-            rightToolbar.style.alignItems = 'center';
-            rightToolbar.style.flexWrap = 'wrap';
-            rightToolbar.style.justifyContent = 'center';
-            rightToolbar.style.marginTop = '0.5rem';
-          }
         }, 100);
 
         calendar.render();
-        // Replace view button labels with icons
-        function applyViewIcons() {
-          const monthBtn = document.querySelector('.fc-dayGridMonth-button');
-          const weekBtn = document.querySelector('.fc-timeGridWeek-button');
-          const listBtn = document.querySelector('.fc-listMonth-button');
-          if (monthBtn && !monthBtn.dataset.iconized) { monthBtn.innerHTML = '<i class="fa-solid fa-calendar-days"></i>'; monthBtn.title = 'Month'; monthBtn.dataset.iconized = '1'; }
-          if (weekBtn && !weekBtn.dataset.iconized) { weekBtn.innerHTML = '<i class="fa-solid fa-calendar-week"></i>'; weekBtn.title = 'Week'; weekBtn.dataset.iconized = '1'; }
-          if (listBtn && !listBtn.dataset.iconized) { listBtn.innerHTML = '<i class="fa-solid fa-list"></i>'; listBtn.title = 'List'; listBtn.dataset.iconized = '1'; }
-        }
-        applyViewIcons();
-        calendar.on('datesSet', applyViewIcons);
 
         // Dynamic responsive adjustments for toolbar title and nav buttons (beyond CSS)
         function adjustCalendarToolbar() {
           const w = window.innerWidth;
           const titleEl = document.querySelector('.fc-toolbar-title');
           if (titleEl) {
-            if (!titleEl.dataset.full) { titleEl.dataset.full = titleEl.textContent.trim(); }
-            const full = titleEl.dataset.full;
+            // Always derive the fresh full title from FullCalendar's current view
+            const full = (calendar && calendar.view && calendar.view.title)
+              ? calendar.view.title
+              : titleEl.textContent.trim();
+            titleEl.dataset.full = full;
             if (w < 420) {
               // aggressively truncate long titles
               titleEl.textContent = full.length > 20 ? full.slice(0, 17) + '…' : full;
@@ -1084,7 +1119,7 @@ $hearings_json = json_encode($hearings_list);
               btn.style.padding = '.20rem .45rem';
               btn.style.fontSize = '.65rem';
             } else if (w < 560) {
-              btn.style.padding = '.24rem .5rem';
+               btn.style.padding = '.24rem .5rem';
               btn.style.fontSize = '.7rem';
             } else if (w < 768) {
               btn.style.padding = '.26rem .55rem';

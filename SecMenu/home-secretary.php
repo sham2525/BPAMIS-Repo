@@ -105,6 +105,22 @@ for ($i = 5; $i >= 0; $i--) {
     $monthlyClosed[] = $caseBreak['close'];
     $monthlyResolved[] = $caseBreak['resolved'];
 }
+
+// ===================== SECRETARY CASES FOR TIMELINE ===================== //
+$secretaryCases = [];
+if ($stmt = $conn->prepare("SELECT ci.Case_ID, co.Complaint_ID, co.Complaint_Title, co.Date_Filed, ci.Case_Status, co.case_type
+                             FROM case_info ci
+                             JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID
+                             ORDER BY co.Date_Filed DESC, ci.Case_ID DESC")) {
+    if ($stmt->execute()) {
+        $res = $stmt->get_result();
+        while ($row = $res->fetch_assoc()) {
+            $secretaryCases[] = $row;
+        }
+    }
+    $stmt->close();
+}
+$serverNowIso = (new DateTime())->format('Y-m-d\TH:i:sP');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -576,6 +592,11 @@ for ($i = 5; $i >= 0; $i--) {
                 <div class="flex items-center gap-2 mb-5">
                     <i class="fa-solid fa-calendar-days text-sky-600"></i>
                     <h2 class="text-sky-900 font-semibold tracking-tight">Upcoming Hearings</h2>
+                    <a href="view_hearing_calendar.php" title="Open full calendar"
+                       class="ml-auto inline-flex items-center justify-center h-8 w-8 rounded-lg bg-white/60 hover:bg-white/80 border border-white/60 text-sky-700 hover:text-sky-900 shadow-sm transition"
+                       aria-label="Open full calendar">
+                        <i class="fa-solid fa-up-right-and-down-left-from-center"></i>
+                    </a>
                 </div>
                 <iframe src="./schedule/CalendarSec.php"
                     class="w-full rounded-xl border border-white/40 h-[640px] bg-white/50"></iframe>
@@ -583,26 +604,88 @@ for ($i = 5; $i >= 0; $i--) {
         </div>
         <!-- Activity & Trends -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <!-- Case Timeline (copied style from Resident/External) -->
             <div class="lg:col-span-5 glass rounded-2xl p-6 md:p-7 fade-in">
-                <div class="flex items-center gap-2 mb-5">
-                    <i class="fa-solid fa-bell text-sky-600"></i>
-                    <h2 class="text-sky-900 font-semibold tracking-tight">Recent Activity</h2>
+                <div class="flex items-center justify-between mb-3 gap-3">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <h2 class="text-sky-900 font-semibold tracking-tight flex items-center gap-2 whitespace-nowrap">
+                            <i class="fa-solid fa-timeline text-sky-600"></i>Case Timeline
+                        </h2>
+                        <span class="hidden sm:inline px-2 py-1 rounded-lg text-[10px] font-medium bg-sky-600/10 text-sky-700 border border-white/50">LGC 1991 · Secs. 399–422</span>
+                    </div>
+                    <div class="ml-auto flex items-center gap-2 min-w-0">
+                        <label for="sec-case-select" class="text-[11px] text-sky-700 whitespace-nowrap">Select case:</label>
+                        <select id="sec-case-select" class="w-44 text-[12px] px-2 py-1 rounded-md bg-white/70 border border-white/60 text-sky-900 focus:outline-none focus:ring-2 focus:ring-sky-300"></select>
+                    </div>
                 </div>
-                <div class="space-y-4">
-                    <?php if (empty($recentActivities)): ?>
-                        <p class="text-xs text-sky-700/70">No recent activity recorded.</p>
-                    <?php else:
-                        foreach ($recentActivities as $a): ?>
-                            <div class="flex items-start gap-3">
-                                <div class="h-8 w-8 rounded-lg bg-sky-100 flex items-center justify-center text-sky-600"><i
-                                        class="fa-solid fa-plus"></i></div>
-                                <div class="flex-1">
-                                    <p class="text-sm font-medium text-sky-900 leading-tight"><?= $a['message'] ?></p>
-                                    <p class="text-[10px] mt-1 text-sky-700/60 tracking-wide">
-                                        <?= date('M d, Y • h:i A', strtotime($a['time'])) ?></p>
-                                </div>
+                <div id="sec-case-phase-summary" class="mb-3 text-[11px] text-sky-700/90"></div>
+                <div class="space-y-4 relative">
+                    <div class="absolute left-3 top-1 bottom-1 w-px bg-sky-200/70"></div>
+                    <!-- Filing -->
+                    <div class="relative pl-8 timeline-step" data-step="filing">
+                        <div class="absolute left-0 top-0 w-6 h-6 rounded-full bg-purple-500 text-white flex items-center justify-center shadow ring-2 ring-white">
+                            <i class="fa-solid fa-file-circle-plus text-[11px]"></i>
+                        </div>
+                        <div class="rounded-xl border border-white/60 bg-white/60 p-3">
+                            <div class="flex items-center gap-2">
+                                <p class="text-[13px] font-semibold text-sky-900">Filing of Complaint</p>
+                                <span id="sec-badge-filing" class="ml-auto px-2 py-0.5 rounded-md text-[10px] bg-purple-500/15 text-purple-700 border border-purple-500/20">Day 0</span>
                             </div>
-                        <?php endforeach; endif; ?>
+                            <p class="mt-1 text-[12px] text-sky-700/80">Starts when complaint is filed. <span id="sec-date-filing" class="font-medium text-sky-800"></span></p>
+                        </div>
+                    </div>
+                    <!-- Mediation -->
+                    <div class="relative pl-8 timeline-step" data-step="mediation">
+                        <div class="absolute left-0 top-0 w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center shadow ring-2 ring-white">
+                            <i class="fa-solid fa-handshake text-[11px]"></i>
+                        </div>
+                        <div class="rounded-xl border border-white/60 bg-white/60 p-3">
+                            <div class="flex items-center gap-2">
+                                <p class="text-[13px] font-semibold text-sky-900">Mediation by Punong Barangay</p>
+                                <span id="sec-badge-mediation" class="ml-auto px-2 py-0.5 rounded-md text-[10px] bg-amber-500/15 text-amber-700 border border-amber-500/20">Up to 15 days</span>
+                            </div>
+                            <p class="mt-1 text-[12px] text-sky-700/80">Attempt to amicably settle within 15 days. <span id="sec-range-mediation" class="font-medium text-sky-800"></span></p>
+                        </div>
+                    </div>
+                    <!-- Pangkat -->
+                    <div class="relative pl-8 timeline-step" data-step="pangkat">
+                        <div class="absolute left-0 top-0 w-6 h-6 rounded-full bg-sky-500 text-white flex items-center justify-center shadow ring-2 ring-white">
+                            <i class="fa-solid fa-people-group text-[11px]"></i>
+                        </div>
+                        <div class="rounded-xl border border-white/60 bg-white/60 p-3">
+                            <div class="flex items-center gap-2">
+                                <p class="text-[13px] font-semibold text-sky-900">Pangkat ng Tagapagkasundo (Conciliation)</p>
+                                <span id="sec-badge-pangkat" class="ml-auto px-2 py-0.5 rounded-md text-[10px] bg-sky-500/15 text-sky-700 border border-sky-500/20">15–30 days</span>
+                            </div>
+                            <p class="mt-1 text-[12px] text-sky-700/80">Conciliation within 15 days; may extend another 15. <span id="sec-range-pangkat" class="font-medium text-sky-800"></span></p>
+                        </div>
+                    </div>
+                    <!-- Arbitration -->
+                    <div class="relative pl-8 timeline-step" data-step="arbitration">
+                        <div class="absolute left-0 top-0 w-6 h-6 rounded-full bg-indigo-500 text-white flex items-center justify-center shadow ring-2 ring-white">
+                            <i class="fa-solid fa-scale-balanced text-[11px]"></i>
+                        </div>
+                        <div class="rounded-xl border border-white/60 bg-white/60 p-3">
+                            <div class="flex items-center gap-2">
+                                <p class="text-[13px] font-semibold text-sky-900">Arbitration (if agreed)</p>
+                                <span id="sec-badge-arbitration" class="ml-auto px-2 py-0.5 rounded-md text-[10px] bg-indigo-500/15 text-indigo-700 border border-indigo-500/20">Within 10 days</span>
+                            </div>
+                            <p class="mt-1 text-[12px] text-sky-700/80">If parties agree, award is rendered within 10 days. <span id="sec-note-arbitration" class="text-[11px] italic text-sky-600/80"></span></p>
+                        </div>
+                    </div>
+                    <!-- Finality -->
+                    <div class="relative pl-8 timeline-step" data-step="finality">
+                        <div class="absolute left-0 top-0 w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow ring-2 ring-white">
+                            <i class="fa-solid fa-file-signature text-[11px]"></i>
+                        </div>
+                        <div class="rounded-xl border border-white/60 bg-white/60 p-3">
+                            <div class="flex items-center gap-2">
+                                <p class="text-[13px] font-semibold text-sky-900">Execution of Settlement/Award</p>
+                                <span id="sec-badge-finality" class="ml-auto px-2 py-0.5 rounded-md text-[10px] bg-emerald-500/15 text-emerald-700 border border-emerald-500/20">Final in 10 days</span>
+                            </div>
+                            <p class="mt-1 text-[12px] text-sky-700/80">Becomes final after 10 days unless repudiated. <span id="sec-note-finality" class="text-[11px] italic text-sky-600/80"></span></p>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="lg:col-span-7 glass rounded-2xl p-6 md:p-7 fade-in">
@@ -616,6 +699,10 @@ for ($i = 5; $i >= 0; $i--) {
     </div>
 
     <script>
+        // Expose cases for Case Timeline (Secretary)
+        window.__secCases = <?= json_encode($secretaryCases, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+        window.__secServerNowIso = '<?= $serverNowIso ?>';
+
         const ctx = document.getElementById('statsChart').getContext('2d');
         new Chart(ctx, {
             type: 'line',
@@ -750,7 +837,188 @@ for ($i = 5; $i >= 0; $i--) {
 
         // Removed legacy dummy chart init & loadStatistics call (not needed)
     </script>
+    <script>
+        // Case Timeline logic (Secretary)
+        document.addEventListener('DOMContentLoaded', () => {
+            const cases = Array.isArray(window.__secCases) ? window.__secCases : [];
+            const now = new Date(window.__secServerNowIso || Date.now());
+            const select = document.getElementById('sec-case-select');
+            const summary = document.getElementById('sec-case-phase-summary');
+            const fmt = (d) => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+            const addDays = (date, days) => { const dt = new Date(date); dt.setDate(dt.getDate() + days); return dt; };
+            const daysBetween = (a, b) => Math.floor((new Date(b) - new Date(a)) / 86400000);
 
+            // Step elements for highlighting
+            const steps = {
+                filing: document.querySelector('.timeline-step[data-step="filing"]'),
+                mediation: document.querySelector('.timeline-step[data-step="mediation"]'),
+                pangkat: document.querySelector('.timeline-step[data-step="pangkat"]'),
+                arbitration: document.querySelector('.timeline-step[data-step="arbitration"]'),
+                finality: document.querySelector('.timeline-step[data-step="finality"]')
+            };
+
+            function clearStepClasses() {
+                Object.values(steps).forEach(el => {
+                    if (!el) return;
+                    el.classList.remove('opacity-60', 'ring-2', 'ring-sky-400', 'ring-emerald-400');
+                });
+            }
+            function mark(el, type) {
+                if (!el) return;
+                if (type === 'current') el.classList.add('ring-2', 'ring-sky-400');
+                if (type === 'completed') el.classList.add('ring-2', 'ring-emerald-400');
+                if (type === 'upcoming') el.classList.add('opacity-60');
+            }
+            function computePhase(dateFiledStr) {
+                const filed = new Date(dateFiledStr);
+                if (isNaN(filed)) return { phase: 'unknown', days: 0, filed: null };
+                const days = daysBetween(filed, now);
+                if (days <= 0) return { phase: 'filing', days, filed };
+                if (days <= 15) return { phase: 'mediation', days, filed };
+                if (days <= 30) return { phase: 'pangkat', days, filed, ext: false };
+                if (days <= 45) return { phase: 'pangkat', days, filed, ext: true };
+                return { phase: 'beyond', days, filed };
+            }
+
+            function escapeHtml(unsafe) {
+                if (unsafe === null || unsafe === undefined) return '';
+                return String(unsafe)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
+            }
+
+            function updateTimeline(c) {
+                if (!c) {
+                    summary.innerHTML = '<span class="text-[12px] text-sky-700/70">No case selected.</span>';
+                    ['filing','mediation','pangkat','arbitration','finality'].forEach(step => {
+                        // clear badges
+                        const ids = {
+                            filing: ['sec-badge-filing','sec-date-filing'],
+                            mediation: ['sec-badge-mediation','sec-range-mediation'],
+                            pangkat: ['sec-badge-pangkat','sec-range-pangkat'],
+                            arbitration: ['sec-badge-arbitration','sec-note-arbitration'],
+                            finality: ['sec-badge-finality','sec-note-finality']
+                        }[step];
+                        if (!ids) return;
+                        ids.forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
+                    });
+                    clearStepClasses();
+                    return;
+                }
+                const filed = c.Date_Filed;
+                const caseType = escapeHtml(c.case_type || c.Case_Type || '');
+                const title = escapeHtml(c.Complaint_Title || 'Untitled');
+                const caseId = escapeHtml(c.Case_ID);
+                const status = escapeHtml(c.Case_Status || '');
+
+                // Phase windows (based on Resident timeline semantics)
+                const filingDate = new Date(filed);
+                const mediationEnd = addDays(filed, 15);
+                const pangkatStart = addDays(filed, 15);
+                const pangkatEnd = addDays(filed, 30); // extendable to 30
+                const arbitrationEnd = addDays(filed, 40); // indicative window
+
+                // Determine current phase and day count
+                const phaseInfo = computePhase(filed);
+                let phaseLabel = 'Unknown';
+                if (phaseInfo.phase === 'filing') phaseLabel = 'Filing of Complaint';
+                else if (phaseInfo.phase === 'mediation') phaseLabel = 'Mediation by Punong Barangay';
+                else if (phaseInfo.phase === 'pangkat') phaseLabel = phaseInfo.ext ? 'Pangkat (Extended)' : 'Pangkat ng Tagapagkasundo';
+                else if (phaseInfo.phase === 'beyond') phaseLabel = 'Beyond 45 days — escalate/finalize';
+
+                const dayN = Math.max(0, phaseInfo.days || 0);
+
+                // Top summary
+                summary.innerHTML = `
+                    <span class="px-2 py-1 rounded-md bg-white/60 border border-white/60 text-[11px] text-sky-800 font-medium">Case #${caseId}</span>
+                    <span class="ml-2 text-[11px] text-sky-700/80">${title}${caseType ? ' • ' + caseType : ''}</span>
+                    <span class="ml-2 px-2 py-0.5 rounded-md text-[10px] bg-blue-100 text-blue-700 border border-blue-200">${status}</span>
+                    <span class="ml-2 text-[11px] text-sky-700/80">· Day <span class="font-semibold">${dayN}</span> · Phase: <span class="font-semibold">${phaseLabel}</span></span>
+                `;
+
+                // Filing
+                const badgeFiling = document.getElementById('sec-badge-filing');
+                const dateFiling = document.getElementById('sec-date-filing');
+                if (badgeFiling) badgeFiling.textContent = 'Day 0';
+                if (dateFiling) dateFiling.textContent = fmt(filed);
+
+                // Mediation (0-15 days)
+                const badgeMed = document.getElementById('sec-badge-mediation');
+                const rangeMed = document.getElementById('sec-range-mediation');
+                if (badgeMed) badgeMed.textContent = 'Up to 15 days';
+                if (rangeMed) rangeMed.textContent = `${fmt(filed)} – ${fmt(mediationEnd)}`;
+
+                // Pangkat (15–30 days)
+                const badgeP = document.getElementById('sec-badge-pangkat');
+                const rangeP = document.getElementById('sec-range-pangkat');
+                if (badgeP) badgeP.textContent = '15–30 days';
+                if (rangeP) rangeP.textContent = `${fmt(pangkatStart)} – ${fmt(pangkatEnd)}`;
+
+                // Arbitration (if agreed) – indicative (within 10 days)
+                const badgeA = document.getElementById('sec-badge-arbitration');
+                const noteA = document.getElementById('sec-note-arbitration');
+                if (badgeA) badgeA.textContent = 'Within 10 days';
+                if (noteA) noteA.textContent = 'Optional – applies only if parties agree to arbitrate.';
+
+                // Finality – 10 days after award/settlement (display guidance)
+                const badgeF = document.getElementById('sec-badge-finality');
+                const noteF = document.getElementById('sec-note-finality');
+                if (badgeF) badgeF.textContent = 'Final in 10 days';
+                if (noteF) noteF.textContent = 'Final and executory 10 days after settlement/award unless repudiated.';
+
+                // Highlight phases (completed/current/upcoming)
+                clearStepClasses();
+                if (phaseInfo.phase === 'filing') {
+                    mark(steps.filing, 'current');
+                    mark(steps.mediation, 'upcoming');
+                    mark(steps.pangkat, 'upcoming');
+                    mark(steps.arbitration, 'upcoming');
+                    mark(steps.finality, 'upcoming');
+                } else if (phaseInfo.phase === 'mediation') {
+                    mark(steps.filing, 'completed');
+                    mark(steps.mediation, 'current');
+                    mark(steps.pangkat, 'upcoming');
+                    mark(steps.arbitration, 'upcoming');
+                    mark(steps.finality, 'upcoming');
+                } else if (phaseInfo.phase === 'pangkat') {
+                    mark(steps.filing, 'completed');
+                    mark(steps.mediation, 'completed');
+                    mark(steps.pangkat, 'current');
+                    mark(steps.arbitration, 'upcoming');
+                    mark(steps.finality, 'upcoming');
+                } else if (phaseInfo.phase === 'beyond') {
+                    mark(steps.filing, 'completed');
+                    mark(steps.mediation, 'completed');
+                    mark(steps.pangkat, 'completed');
+                    mark(steps.arbitration, 'upcoming');
+                    mark(steps.finality, 'upcoming');
+                }
+            }
+
+            if (select) {
+                if (!cases.length) {
+                    select.innerHTML = '<option value="">No cases found</option>';
+                } else {
+                    select.innerHTML = cases.map(c => {
+                        const type = (c.case_type || c.Case_Type || '').toString().trim();
+                        const label = `Case #${c.Case_ID} — ${type || 'N/A'}`;
+                        return `<option value="${c.Case_ID}">${escapeHtml(label)}</option>`;
+                    }).join('');
+                    const initial = cases[0];
+                    updateTimeline(initial);
+                    select.value = initial ? String(initial.Case_ID) : '';
+                    select.addEventListener('change', () => {
+                        const id = select.value;
+                        const found = cases.find(c => String(c.Case_ID) === id);
+                        updateTimeline(found);
+                    });
+                }
+            }
+        });
+    </script>
 
     <?php include '../chatbot/bpamis_case_assistant.php' ?>
     </body>

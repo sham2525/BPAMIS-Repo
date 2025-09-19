@@ -1,5 +1,5 @@
 <?php
-require_once('db-connect.php')
+require_once('db-connect.php');
 
 ?>
 <!DOCTYPE html>
@@ -97,6 +97,13 @@ require_once('db-connect.php')
       border-radius: 12px;
       box-shadow: 0 2px 8px 0 rgba(2, 129, 212, 0.08);
     }
+    /* Highlight days that have hearings (distinct from current day; no border) */
+    .fc .fc-daygrid-day.has-hearing:not(.fc-day-today) {
+      background: linear-gradient(90deg, rgba(216, 180, 254, 0.35) 0%, rgba(243, 232, 255, 0.65) 100%) !important;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(124, 58, 237, 0.12);
+    }
+    .fc .fc-daygrid-day.has-hearing:not(.fc-day-today) .fc-daygrid-day-number { color: #7c3aed; }
     .fc .fc-event {
       border: none !important;
       padding: 10px 18px 10px 16px;
@@ -125,37 +132,58 @@ require_once('db-connect.php')
       z-index: 2;
       background: rgba(255,255,255,0.38) !important;
     }
+    /* Icon-only hearing event styling (Month/Week views) */
+    .fc .evt-hearing { 
+      padding: 4px 6px !important; 
+      min-height: 0 !important; 
+      display: inline-flex; 
+      align-items: center; 
+      justify-content: center; 
+    }
+    .fc .evt-hearing .hearing-icon { 
+      display: inline-flex; 
+      align-items: center; 
+      justify-content: center; 
+      width: 22px; 
+      height: 22px; 
+      border-radius: 9999px; 
+      background: #eef2ff; 
+      color: #7c3aed; 
+      border: 1px solid #c7d2fe; 
+      box-shadow: inset 0 0 0 1px rgba(124,58,237,.08);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .fc .evt-hearing .fc-event-time, 
+    .fc .evt-hearing .fc-event-title { display: none !important; }
     @keyframes eventFadeIn {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
-    /* Modal glassmorphism style */
-    #event-details-modal .bg-white {
-      background: rgba(255,255,255,0.95);
+    /* Modal glassmorphism style (Resident parity) */
+    #eventModal .relative {
+      background: rgba(255, 255, 255, 0.95);
       box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.13);
       border-radius: 22px;
       border: 1.5px solid #e0e7ef;
       backdrop-filter: blur(8px);
+      position: relative;
+      overflow: hidden;
     }
-    #event-details-modal h5 {
-      color: #0281d4;
-      font-weight: 700;
-      font-size: 1.3rem;
+    #eventModal .relative::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 4px;
+      background: linear-gradient(90deg, #0281d4, #0ea5e9, #0281d4);
+      background-size: 200% 100%;
+      animation: gradientShift 3s ease-in-out infinite;
     }
-    #event-details-modal dt {
-      color: #0281d4;
-      font-weight: 600;
-    }
-    #event-details-modal dd {
-      font-size: 1.08rem;
-    }
-    #event-details-modal button {
-      transition: background 0.2s, color 0.2s, box-shadow 0.2s;
-    }
-    #event-details-modal button:focus {
-      outline: 2px solid #0281d4;
-      outline-offset: 2px;
-    }
+    @keyframes gradientShift { 0%,100% {background-position:0% 50%} 50% {background-position:100% 50%} }
+    #modalTitle { color:#0281d4; font-weight:700; font-size:1.3rem; margin-top:.5rem; }
+    #modalContent { max-height:70vh; overflow-y:auto; padding-right:.5rem; }
+    #modalContent::-webkit-scrollbar { width:6px; }
+    #modalContent::-webkit-scrollbar-track { background:#f1f5f9; border-radius:3px; }
+    #modalContent::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px; }
+    #modalContent::-webkit-scrollbar-thumb:hover { background:#94a3b8; }
     /* Responsive tweaks */
     @media (max-width: 640px) {
       #calendar {
@@ -196,6 +224,97 @@ require_once('db-connect.php')
     .fc-list .fc-event-time, .fc-list .fc-event-title {
       color: #111 !important;
     }
+    /* ===== Enhanced List View Styling (parity with Resident) ===== */
+    .fc-theme-standard .fc-list,
+    .fc-theme-standard .fc-list-table,
+    .fc-theme-standard td,
+    .fc-theme-standard th { border: none; }
+    /* Day header: pill card with subtle gradient and shadow */
+    .fc .fc-list-day-cushion {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: linear-gradient(90deg, rgba(199, 229, 248, 0.5) 0%, #f0f9ff 100%);
+      color: #0f4c75;
+      font-weight: 800;
+      letter-spacing: .3px;
+      padding: .75rem 1rem;
+      margin: .75rem 1rem .25rem 1rem;
+      border: 1px solid #e0e7ef;
+      border-radius: 12px;
+      box-shadow: 0 4px 14px rgba(2, 129, 212, 0.12);
+    }
+    /* Event rows: airy spacing and card-like hover */
+    .fc .fc-list-event td { padding: .70rem 1rem; }
+    .fc .fc-list-event:hover td {
+      background: #ffffff;
+      box-shadow: 0 8px 20px rgba(2, 129, 212, 0.14);
+      transition: box-shadow .2s ease, background .2s ease;
+    }
+  /* Title link styling for better prominence */
+  .fc .fc-list-event-title a { color: #0f172a !important; font-weight: 800 !important; }
+  /* Center the hearing title in list view */
+  .fc .fc-list-event-title { text-align: center; }
+  .fc .fc-list-event-title a, .fc .fc-list-event-title span { display: block; width: 100%; }
+    /* Time badge: compact pill */
+    .fc .fc-list-event-time {
+      background: #e6f4ff;
+      color: #0369a1;
+      border: 1px solid #b6e1f7;
+      border-radius: 9999px;
+      padding: .20rem .6rem;
+      font-weight: 700;
+      font-size: .80rem;
+    }
+    /* Graphic dot: consistent brand color */
+    .fc .fc-list-event-graphic .fc-list-event-dot { border-color: #7c3aed; border-width: 6px; }
+    /* Subtle zebra effect for readability */
+    .fc .fc-list-table tbody tr:nth-child(even) td { background: rgba(248, 250, 252, 0.60); }
+    /* Empty state for list view */
+    .fc .fc-list-empty td { border: none; padding: 0; }
+    .fc .fc-list-empty .fc-list-empty-cushion {
+      margin: 12px;
+      padding: 20px 18px;
+      border-radius: 16px;
+      border: 1px solid #e5e7eb;
+      background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+      color: #64748b;
+      text-align: center;
+      font-weight: 700;
+      letter-spacing: .2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 6px 18px rgba(2,129,212,0.08);
+    }
+    .fc .fc-list-empty .fc-list-empty-cushion::before {
+      content: '\1F5D3';
+      font-size: 1.2rem;
+      color: #0281d4;
+      opacity: .7;
+      display: inline-block;
+      transform: translateY(1px);
+    }
+
+    /* ===== Remove grid/cell lines in calendar (clean look) ===== */
+    .fc-theme-standard .fc-scrollgrid,
+    .fc-theme-standard .fc-scrollgrid thead tr,
+    .fc-theme-standard .fc-scrollgrid tbody tr,
+    .fc-theme-standard td,
+    .fc-theme-standard th { border: 0 !important; }
+    .fc .fc-scrollgrid { border: 0 !important; }
+    .fc .fc-col-header, .fc .fc-col-header-cell { border: 0 !important; }
+    .fc .fc-daygrid-day,
+    .fc .fc-daygrid-day-frame,
+    .fc .fc-daygrid-day-top,
+    .fc .fc-daygrid-day-bg { border: 0 !important; }
+    .fc .fc-timegrid-slot,
+    .fc .fc-timegrid-axis,
+    .fc .fc-timegrid-divider,
+    .fc .fc-timegrid-slot-label { border: 0 !important; }
+    /* Keep today highlight visible despite removed lines */
+    .fc .fc-daygrid-day.fc-day-today { box-shadow: 0 2px 8px 0 rgba(2, 129, 212, 0.08); }
     /* Highlight current day in week list view */
     .fc-listWeek-view .fc-list-day.fc-day-today {
       background: linear-gradient(90deg,rgba(199, 229, 248, 0.85) 0%, #f0f9ff 100%) !important;
@@ -209,6 +328,12 @@ require_once('db-connect.php')
     .fc-timeGridDay-view .fc-timegrid-slot-label.fc-day-today {
       background: linear-gradient(90deg,rgba(199, 229, 248, 0.85) 0%, #f0f9ff 100%) !important;
     }
+    /* In Week view, subtly highlight headers for days with hearings (distinct from today) */
+    .fc-timeGridWeek-view .fc-col-header-cell.has-hearing-header:not(.fc-day-today) {
+      background: linear-gradient(90deg, rgba(216, 180, 254, 0.35) 0%, rgba(243, 232, 255, 0.65) 100%) !important;
+      border-radius: 10px;
+      box-shadow: 0 1px 4px rgba(124, 58, 237, 0.12);
+    }
   </style>
 </head>
 
@@ -217,39 +342,26 @@ require_once('db-connect.php')
     <div id="calendar" class="relative z-10"></div>
   </div>
 
-  <!-- Event Details Modal -->
-  <div class="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center hidden" id="event-details-modal">
-    <div class="bg-white rounded-lg w-full max-w-md">
-      <div class="border-b px-6 py-4 flex justify-between items-center">
-        <h5 class="text-lg font-semibold">Schedule Details</h5>
-        <button class="text-gray-500 hover:text-gray-800" onclick="closeModal()">
-          <i class="fas fa-times"></i>
+  <!-- Resident-style Event Modal -->
+  <div id="eventModal" class="fixed inset-0 hidden flex items-center justify-center z-50">
+    <div class="absolute inset-0 bg-black opacity-40 backdrop-blur-sm"></div>
+    <div class="relative bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl w-full max-w-md mx-auto p-6 z-60 transform transition-all duration-300 border border-gray-200">
+      <button id="modalClose"
+        class="absolute top-4 right-4 text-gray-600 hover:text-red-600 transition-colors duration-200 bg-white hover:bg-red-50 border border-gray-200 rounded-full w-8 h-8 flex items-center justify-center backdrop-blur-sm shadow-lg text-lg font-bold cursor-pointer transform hover:scale-110 transition-transform"
+        onclick="document.getElementById('eventModal').classList.add('hidden');">&times;</button>
+      <h3 id="modalTitle" class="text-xl font-semibold mb-4 text-blue-700 border-b border-gray-200 pb-2"></h3>
+      <div id="modalContent" class="text-sm text-gray-700 space-y-3"></div>
+      <div class="mt-4 flex items-center justify-end gap-2">
+        <button id="reschedule" data-id="" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors inline-flex items-center gap-2">
+          <i class="far fa-calendar-plus"></i>
+          Reschedule
         </button>
-      </div>
-      <div class="px-6 py-4 space-y-3">
-      <div>
-          <dt class="text-gray-500 text-sm">Case Number</dt>
-          <dd id="case-id" class="text-xl font-bold"></dd>
-        </div>
-        <div>
-          <dt class="text-gray-500 text-sm">Title</dt>
-          <dd id="title" class="text-xl font-bold"></dd>
-        </div>
-        <div>
-          <dt class="text-gray-500 text-sm">Date & Time</dt>
-          <dd id="start" class="text-gray-700"></dd>
-        </div>
-        <div>
-          <dt class="text-gray-500 text-sm">View Details</dt>
-          <dd>
-            <a id="view-details-link" href="#" target="_blank" class="text-gray-500 text-sm underline">Go to Case Info</a>
-          </dd>
-        </div>
-      </div>
-      <div class="border-t px-6 py-4 flex justify-end space-x-2">
-        <button id="reschedule" data-id="" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm">Reschedule</button>
-        <button id="delete" data-id="" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm">Delete</button>
-        <button onclick="closeModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded text-sm">Back</button>
+        <button id="delete" data-id="" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors inline-flex items-center gap-2">
+          <i class="far fa-trash-alt"></i>
+          Delete
+        </button>
+        <button class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+          onclick="document.getElementById('eventModal').classList.add('hidden');">Close</button>
       </div>
     </div>
   </div>
@@ -289,11 +401,24 @@ require_once('db-connect.php')
         });
       }
 
+      // Build a set of dates (YYYY-MM-DD) with at least one hearing
+      var hearingDateSet = new Set();
+      (events || []).forEach(function(ev){
+        if (ev && ev.start) {
+          var d = new Date(ev.start);
+          var y = d.getFullYear();
+          var m = String(d.getMonth() + 1).padStart(2, '0');
+          var day = String(d.getDate()).padStart(2, '0');
+          hearingDateSet.add(y + '-' + m + '-' + day);
+        }
+      });
+
       calendar = new Calendar(document.getElementById('calendar'), {
+        noEventsText: 'No hearings scheduled for this period',
         headerToolbar: {
           left: 'prev,next',
           center: 'title',
-          right: 'dayGridMonth,timeGridWeek,timeGridDay,listMonth'
+          right: 'dayGridMonth,timeGridWeek,listMonth'
         },
         height: '100%',
         expandRows: true,
@@ -306,31 +431,86 @@ require_once('db-connect.php')
           minute: '2-digit',
           meridiem: 'short'
         },
+        eventClassNames: function(arg){
+          // Tag hearing events in non-list views for icon-only styling
+          if (!arg.view.type.startsWith('list')) return ['evt-hearing'];
+          return [];
+        },
         eventContent: function(arg) {
-          // Only customize for week and list views
           var viewType = arg.view.type;
-          if (viewType === 'timeGridWeek' || viewType === 'listWeek' || viewType === 'listMonth' || viewType === 'listDay') {
-            // Get the case number from scheds
-            var caseNum = '';
-            if (scheds && scheds[arg.event.id] && scheds[arg.event.id].Case_ID) {
-              caseNum = 'Case#' + scheds[arg.event.id].Case_ID;
-            } else {
-              caseNum = 'Case#' + arg.event.id;
-            }
-            return { html: '<span style="font-weight:700;color:#111;">' + caseNum + '</span>' };
+          var title = escapeHtml(arg.event.title || 'Hearing');
+          if (viewType === 'listWeek' || viewType === 'listMonth' || viewType === 'listDay') {
+            // Show full title in list views, centered
+            return { html: '<span class="block w-full text-center font-semibold text-slate-900">' + title + '</span>' };
+          }
+          if (viewType === 'timeGridWeek' || viewType === 'timeGridDay' || viewType === 'dayGridMonth') {
+            // Icon-only in Month/Week with hover tooltip
+            return { html: '<span class="hearing-icon" title="' + title + '" aria-label="' + title + '"><i class="fas fa-gavel"></i></span>' };
           }
           // Default rendering for other views
         },
+  eventDidMount: function(info){
+          // Hide time in Month, keep in Week/List
+          var isMonth = info.view && info.view.type && info.view.type.indexOf('dayGrid') === 0;
+          var timeEl = info.el.querySelector('.fc-event-time');
+          if (timeEl) timeEl.style.display = isMonth ? 'none' : '';
+
+          // Make the icon clickable: open Resident-style modal when the gavel icon is clicked
+          var iconEl = info.el.querySelector('.hearing-icon');
+          if (iconEl) {
+            iconEl.addEventListener('click', function(e){
+              e.preventDefault();
+              e.stopPropagation();
+              var ev = scheds[info.event.id];
+              if (!ev) return;
+              document.getElementById('modalTitle').textContent = ev.title || 'Schedule Details';
+              const content = document.getElementById('modalContent');
+              const caseLink = `../view_case_details.php?id=${ev.Case_ID}`;
+              content.innerHTML = `
+                <p class="mb-2"><strong class="text-gray-700">Hearing Title:</strong> <span class="text-indigo-600">${escapeHtml(ev.title || '')}</span></p>
+                <p class="mb-2"><strong class="text-gray-700">Start:</strong> <span class="text-gray-800">${escapeHtml(ev.sdate || '')}</span></p>
+                ${ev.description ? `<p class=\"mb-2\"><strong class=\"text-gray-700\">Remarks:</strong> <span class=\"text-gray-800\">${escapeHtml(ev.description)}</span></p>` : ''}
+                <p class="mb-2"><strong class="text-gray-700">Case:</strong> <a href="${caseLink}" target="_blank" class="text-emerald-700 hover:text-emerald-800 font-semibold text-sm underline">Open Case Info</a></p>
+                <div class="flex items-center mt-4">
+                  <div class="w-2 h-2 bg-indigo-500 rounded-full mr-2"></div>
+                  <span class="text-xs text-gray-500">Tap anywhere outside to close</span>
+                </div>`;
+              $('#reschedule').attr('data-id', info.event.id);
+              $('#delete').attr('data-id', info.event.id);
+              document.getElementById('eventModal').classList.remove('hidden');
+            });
+          }
+        },
+        dayCellClassNames: function(arg){
+          var d = arg.date;
+          var key = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+          if (hearingDateSet.has(key)) return ['has-hearing'];
+          return [];
+        },
+        dayHeaderClassNames: function(arg){
+          var d = arg.date; if (!d) return [];
+          var key = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+          if (hearingDateSet.has(key)) return ['has-hearing-header'];
+          return [];
+        },
         eventClick: function (info) {
-          let event = scheds[info.event.id];
-          $('#case-id').text(event.Case_ID);
-          $('#title').text(event.title);
-          $('#start').text(event.sdate);
-          // Set the view details link
-          $('#view-details-link').attr('href', '../view_case_details.php?id=' + event.Case_ID);
+          const ev = scheds[info.event.id];
+          if (!ev) return;
+          document.getElementById('modalTitle').textContent = ev.title || 'Schedule Details';
+          const content = document.getElementById('modalContent');
+          const caseLink = `../view_case_details.php?id=${ev.Case_ID}`;
+          content.innerHTML = `
+            <p class="mb-2"><strong class="text-gray-700">Hearing Title:</strong> <span class="text-indigo-600">${escapeHtml(ev.title || '')}</span></p>
+            <p class="mb-2"><strong class="text-gray-700">Start:</strong> <span class="text-gray-800">${escapeHtml(ev.sdate || '')}</span></p>
+            ${ev.description ? `<p class=\"mb-2\"><strong class=\"text-gray-700\">Remarks:</strong> <span class=\"text-gray-800\">${escapeHtml(ev.description)}</span></p>` : ''}
+            <p class="mb-2"><strong class="text-gray-700">Case:</strong> <a href="${caseLink}" target="_blank" class="text-emerald-700 hover:text-emerald-800 font-semibold text-sm underline">Open Case Info</a></p>
+            <div class="flex items-center mt-4">
+              <div class="w-2 h-2 bg-indigo-500 rounded-full mr-2"></div>
+              <span class="text-xs text-gray-500">Tap anywhere outside to close</span>
+            </div>`;
           $('#reschedule').attr('data-id', info.event.id);
           $('#delete').attr('data-id', info.event.id);
-          $('#event-details-modal').removeClass('hidden');
+          document.getElementById('eventModal').classList.remove('hidden');
         },
         editable: false
       });
@@ -358,8 +538,33 @@ require_once('db-connect.php')
     });
 
     function closeModal() {
-      $('#event-details-modal').addClass('hidden');
+      document.getElementById('eventModal').classList.add('hidden');
     }
+
+    function escapeHtml(unsafe) {
+      if (unsafe === null || unsafe === undefined) return '';
+      return String(unsafe)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // Close modal when clicking on dimmed overlay (outside the white card)
+    document.addEventListener('click', function(e){
+      const modal = document.getElementById('eventModal');
+      if (!modal || modal.classList.contains('hidden')) return;
+      const card = modal.querySelector('div.relative');
+      if (card && !card.contains(e.target)) {
+        closeModal();
+      }
+    });
+
+    // Close on Escape
+    document.addEventListener('keydown', function(e){
+      if (e.key === 'Escape') closeModal();
+    });
   </script>
 </body>
 

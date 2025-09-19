@@ -157,7 +157,7 @@ if ((!isset($resident_id) || !$resident_id) && isset($_SESSION['Resident_ID'])) 
     $resident_id = (int) $_SESSION['Resident_ID'];
 }
 if (
-    $stmtCases = $conn->prepare("SELECT ci.Case_ID, co.Complaint_ID, co.Complaint_Title, co.Date_Filed, ci.Case_Status
+    $stmtCases = $conn->prepare("SELECT ci.Case_ID, co.Complaint_ID, co.Complaint_Title, co.Date_Filed, ci.Case_Status, co.case_type
     FROM case_info ci
     JOIN complaint_info co ON ci.Complaint_ID = co.Complaint_ID
     WHERE co.Resident_ID = ?
@@ -981,21 +981,7 @@ $serverNowIso = (new DateTime())->format('Y-m-d\TH:i:sP');
                         <iframe id="resident-calendar" src="../SecMenu/schedule/CalendarResident.php"
                             class="w-full h-full rounded-2xl border border-white/40 bg-white/60 shadow-inner"></iframe>
                     </div>
-                    <div
-                        class="relative z-10 px-5 pb-5 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] text-sky-800/80">
-                        <div class="flex items-center gap-2"><span
-                                class="w-3 h-3 inline-block bg-purple-100 border-l-4 border-purple-600"></span><span><i
-                                    class="fas fa-gavel text-purple-600"></i> Hearing</span></div>
-                        <div class="flex items-center gap-2"><span
-                                class="w-3 h-3 inline-block bg-amber-100 border-l-4 border-amber-500"></span><span><i
-                                    class="fas fa-handshake text-amber-500"></i> Mediation</span></div>
-                        <div class="flex items-center gap-2"><span
-                                class="w-3 h-3 inline-block bg-emerald-100 border-l-4 border-emerald-600"></span><span><i
-                                    class="fas fa-balance-scale text-emerald-600"></i> Resolution</span></div>
-                        <div class="flex items-center gap-2"><span
-                                class="w-3 h-3 inline-block bg-pink-100 border-l-4 border-pink-600"></span><span><i
-                                    class="fas fa-file-signature text-pink-600"></i> Settlement</span></div>
-                    </div>
+                   
                 </div>
             </div>
             <!-- Upcoming / Past Hearings List (1/4 width) -->
@@ -1446,7 +1432,9 @@ $serverNowIso = (new DateTime())->format('Y-m-d\TH:i:sP');
                 return;
             } else {
                 select.innerHTML = cases.map(c => {
-                    const label = `Case #${c.Case_ID} — ${escapeHtml(c.Complaint_Title || 'Untitled')}`;
+                    const rawType = (c.case_type || c.Case_Type || '').toString().trim();
+                    const type = escapeHtml(rawType || 'N/A');
+                    const label = `Case #${c.Case_ID} — ${type}`;
                     return `<option value="${c.Case_ID}">${label}</option>`;
                 }).join('');
             }

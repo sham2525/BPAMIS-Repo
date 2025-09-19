@@ -219,7 +219,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 </div>
 
                 <!-- Hero -->
-                <header class="relative max-w-6xl mx-auto px-4 md:px-8 pt-8 animate-fade-in">
+                <header class="relative max-w-screen-2xl mx-auto px-4 md:px-8 pt-8 animate-fade-in">
                     <div class="relative glass rounded-2xl shadow-sm border border-white/60 ring-1 ring-primary-100/40 px-6 py-8 md:px-10 md:py-12 overflow-hidden">
                         <div class="absolute -top-10 -right-10 w-48 h-48 rounded-full bg-primary-200/60 blur-2xl"></div>
                         <div class="absolute -bottom-12 -left-12 w-64 h-64 rounded-full bg-primary-300/40 blur-3xl"></div>
@@ -241,7 +241,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 
                 <!-- Form Card -->
                 <div class="w-full mt-8 px-4 pb-20">
-                    <div class="w-full max-w-5xl mx-auto bg-white/95 backdrop-blur-sm rounded-2xl border border-gray-100 shadow-md p-8 md:p-10 relative overflow-hidden">
+                    <div class="w-full max-w-7xl mx-auto bg-white/95 backdrop-blur-sm rounded-2xl border border-gray-100 shadow-md p-8 md:p-10 relative overflow-hidden">
                         <div class="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-full opacity-70"></div>
                         <div class="absolute -bottom-16 -left-16 w-56 h-56 bg-gradient-to-tr from-blue-50 to-cyan-100 rounded-full opacity-60"></div>
                         <div class="relative z-10">

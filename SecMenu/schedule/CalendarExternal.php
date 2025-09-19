@@ -5,8 +5,17 @@ include('../../server/server.php');
 
 
 
-
-$External_Complainant_ID = 2;
+// Determine External_Complainant_ID from session (prefer specific external_id, fallback to user_id)
+$External_Complainant_ID = null;
+if (isset($_SESSION['external_id']) && is_numeric($_SESSION['external_id'])) {
+  $External_Complainant_ID = (int) $_SESSION['external_id'];
+} elseif (isset($_SESSION['user_id']) && is_numeric($_SESSION['user_id'])) {
+  $External_Complainant_ID = (int) $_SESSION['user_id'];
+}
+if (!$External_Complainant_ID) {
+  header('Location: ../../bpamis_website/login.php');
+  exit;
+}
 
 // Verify that the external complainant exists (optional, but good for security)
 $val = $conn->prepare("SELECT 1 FROM barangay_case_management.external_complainant WHERE External_Complaint_ID = ?");
@@ -14,8 +23,8 @@ $val->bind_param("i", $External_Complainant_ID);
 $val->execute();
 $val_result = $val->get_result();
 if ($val_result->num_rows == 0) {
-    echo "<script>alert('External complainant not found.'); window.location.href='../BPAMIS-new/bpamis_website/login.php';</script>";
-    exit;
+  echo "<script>alert('External complainant not found.'); window.location.href='../../bpamis_website/login.php';</script>";
+  exit;
 }
 $val->close();
 
@@ -45,95 +54,9 @@ while ($r = $hearing_res->fetch_assoc()) {
 }
 $hearing_stmt->close();
 
-$cases = [];
-$case_stmt = $conn->prepare("
-    SELECT ci.Case_ID, ci.Case_Status, ci.Date_Opened, co.Complaint_Title
-    FROM barangay_case_management.case_info ci
-    JOIN barangay_case_management.complaint_info co ON ci.Complaint_ID = co.Complaint_ID
-    WHERE co.External_Complainant_ID = ?
-    ORDER BY ci.Date_Opened DESC
-");
-$case_stmt->bind_param("i", $External_Complainant_ID);
-$case_stmt->execute();
-$case_res = $case_stmt->get_result();
-
-while ($c = $case_res->fetch_assoc()) {
-    $dateOpenedRaw = $c['Date_Opened'];
-    $dateOpened = date("F d, Y", strtotime($dateOpenedRaw));
-    $days_passed = (new DateTime())->diff(new DateTime($dateOpenedRaw))->days;
-    $days_left = max(0, 45 - $days_passed);
-
-    $cases[] = [
-        'Case_ID' => $c['Case_ID'],
-        'Complaint_Title' => $c['Complaint_Title'],
-        'Case_Status' => $c['Case_Status'],
-        'Date_Opened_Raw' => $dateOpenedRaw,
-        'Date_Opened' => $dateOpened,
-        'Days_Passed' => $days_passed,
-        'Days_Left' => $days_left
-    ];
-
-    // Only add cases NOT resolved to events
-    if (strtolower($c['Case_Status']) !== 'resolved') {
-        $startDate = $c['Date_Opened'];  
-        $endDate = date('Y-m-d', strtotime($startDate . ' +45 days'));  // 45 days duration
-
-        // Calculate case phases based on 15-day cycles
-        $phase_start = strtotime($startDate);
-        $current_time = time();
-        $days_since_start = floor(($current_time - $phase_start) / (24 * 60 * 60));
-        
-        // Determine current phase (15-day cycles)
-        $phase_number = floor($days_since_start / 15);
-        $phase_remainder = $days_since_start % 15;
-        
-        if ($phase_number == 0) {
-            $current_phase = 'mediation';
-            $phase_color = '#facc15'; // Yellow
-            $phase_icon = '';
-            $phase_days_left = 15 - $phase_remainder;
-        } elseif ($phase_number == 1) {
-            $current_phase = 'resolution';
-            $phase_color = '#22c55e'; // Green
-            $phase_icon = '';
-            $phase_days_left = 15 - $phase_remainder;
-        } elseif ($phase_number == 2) {
-            $current_phase = 'settlement';
-            $phase_color = '#a855f7'; // Violet
-            $phase_icon = '';
-            $phase_days_left = 15 - $phase_remainder;
-        } else {
-            $current_phase = 'settlement';
-            $phase_color = '#a855f7'; // Violet
-            $phase_icon = '';
-            $phase_days_left = 0;
-        }
-        
-        $events[] = [
-            'id' => 'case_' . $c['Case_ID'],
-            'title' => $phase_icon . ' ' . $c['Complaint_Title'],
-            'start' => $startDate,
-            'end' => $endDate,   
-            'type' => 'case',
-            'case_title' => $c['Complaint_Title'],
-            'case_status' => $c['Case_Status'],
-            'date_opened' => date("F d, Y", strtotime($startDate)),
-            'days_passed' => $days_passed,
-            'days_left' => $days_left,
-            'current_phase' => $current_phase,
-            'phase_color' => $phase_color,
-            'phase_icon' => $phase_icon,
-            'phase_days_left' => $phase_days_left,
-            'color' => $phase_color
-        ];
-    }
-}
-$case_stmt->close();
-
 $conn->close();
 
 $events_json = json_encode($events);
-$cases_json = json_encode($cases);
 ?>
 
 <!doctype html>
@@ -210,6 +133,13 @@ $cases_json = json_encode($cases);
       border-radius: 12px;
       box-shadow: 0 2px 8px 0 rgba(2, 129, 212, 0.08);
     }
+    /* Highlight days that have hearings (distinct from current day; no border) */
+    .fc .fc-daygrid-day.has-hearing:not(.fc-day-today) {
+      background: linear-gradient(90deg, rgba(216, 180, 254, 0.35) 0%, rgba(243, 232, 255, 0.65) 100%) !important;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(124, 58, 237, 0.12);
+    }
+    .fc .fc-daygrid-day.has-hearing:not(.fc-day-today) .fc-daygrid-day-number { color: #7c3aed; }
     .fc .fc-event {
       border: none !important;
       padding: 10px 18px 10px 16px;
@@ -354,6 +284,94 @@ $cases_json = json_encode($cases);
       color: #111 !important;
     }
     
+    /* List view styling enhancements */
+    .fc .fc-list {
+      border: none;
+    }
+    .fc .fc-list-table td,
+    .fc .fc-list-table th {
+      border: none;
+    }
+    /* Day header chip */
+    .fc .fc-list-day-cushion {
+      margin: 10px 12px;
+      padding: 10px 14px;
+      background: linear-gradient(90deg, rgba(199,229,248,0.35) 0%, #f0f9ff 100%);
+      border: 1px solid #dbeafe;
+      border-radius: 12px;
+      color: #0281d4;
+      font-weight: 800;
+      letter-spacing: .2px;
+    }
+    /* Event rows */
+    .fc .fc-list-event td {
+      padding: 12px 14px;
+      background: #ffffff;
+      border-radius: 12px;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 4px 12px rgba(2,129,212,0.08);
+    }
+    .fc .fc-list-event:hover td {
+      background: #fff;
+      box-shadow: 0 8px 18px rgba(2,129,212,0.14);
+      transform: translateY(-1px);
+    }
+    /* Tighten table spacing */
+    .fc .fc-list-table tbody tr + tr td { border-top: none; }
+    .fc .fc-list-table > tbody > tr.fc-list-event > td { border-top: none; }
+    /* Time badge */
+    .fc .fc-list-event-time {
+      background: #eef2ff;
+      color: #3730a3 !important;
+      padding: 3px 10px;
+      border-radius: 9999px;
+      font-weight: 800;
+      font-size: .78rem;
+      box-shadow: inset 0 0 0 1px #c7d2fe;
+    }
+    /* Dot color */
+    .fc .fc-list-event-dot {
+      border-color: #7c3aed; /* indigo/purple */
+      background: #7c3aed;
+      width: 9px;
+      height: 9px;
+    }
+    /* Title emphasis */
+    .fc .fc-list-event-title a {
+      font-weight: 800;
+      color: #0f172a !important;
+    }
+    /* Zebra subtle */
+    .fc .fc-list-table tbody tr.fc-list-event:nth-child(odd) td {
+      background: #fbfdff;
+    }
+    /* Empty state for list view */
+    .fc .fc-list-empty td { border: none; padding: 0; }
+    .fc .fc-list-empty .fc-list-empty-cushion {
+      margin: 12px;
+      padding: 20px 18px;
+      border-radius: 16px;
+      border: 1px solid #e5e7eb;
+      background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+      color: #64748b;
+      text-align: center;
+      font-weight: 700;
+      letter-spacing: .2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 6px 18px rgba(2,129,212,0.08);
+    }
+    .fc .fc-list-empty .fc-list-empty-cushion::before {
+      content: '\1F5D3'; /* calendar emoji 🗓 (fallback) */
+      font-size: 1.2rem;
+      color: #0281d4;
+      opacity: .7;
+      display: inline-block;
+      transform: translateY(1px);
+    }
+    
     /* Enhanced event text readability */
     .fc-event-title {
       color: #1e293b !important;
@@ -375,9 +393,38 @@ $cases_json = json_encode($cases);
       font-weight: 700 !important;
       text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8) !important;
     }
+    /* Icon-only hearing event styling (Month/Week views) */
+    .fc .evt-hearing { 
+      padding: 4px 6px !important; 
+      min-height: 0 !important; 
+      display: inline-flex; 
+      align-items: center; 
+      justify-content: center; 
+    }
+    .fc .evt-hearing .hearing-icon { 
+      display: inline-flex; 
+      align-items: center; 
+      justify-content: center; 
+      width: 22px; 
+      height: 22px; 
+      border-radius: 9999px; 
+      background: #eef2ff; 
+      color: #7c3aed; 
+      border: 1px solid #c7d2fe; 
+      box-shadow: inset 0 0 0 1px rgba(124,58,237,.08);
+      font-size: 12px;
+    }
+    .fc .evt-hearing .fc-event-time, 
+    .fc .evt-hearing .fc-event-title { display: none !important; }
     /* Highlight current day in week list view */
     .fc-listWeek-view .fc-list-day.fc-day-today {
       background: linear-gradient(90deg,rgba(199, 229, 248, 0.85) 0%, #f0f9ff 100%) !important;
+    }
+    /* In Week view, subtly highlight headers for days with hearings (distinct from today) */
+    .fc-timeGridWeek-view .fc-col-header-cell.has-hearing-header:not(.fc-day-today) {
+      background: linear-gradient(90deg, rgba(216, 180, 254, 0.35) 0%, rgba(243, 232, 255, 0.65) 100%) !important;
+      border-radius: 10px;
+      box-shadow: 0 1px 4px rgba(124, 58, 237, 0.12);
     }
     /* Highlight current day column in timeGrid views */
     .fc-timeGridWeek-view .fc-col-today,
@@ -402,20 +449,7 @@ $cases_json = json_encode($cases);
       box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
     }
     
-    /* Case selector styling */
-    #caseSelector {
-      background: rgba(255, 255, 255, 0.9);
-      border: 1.5px solid #bae6fd;
-      border-radius: 10px;
-      color: #0281d4;
-      font-weight: 500;
-      transition: all 0.3s ease;
-    }
-    #caseSelector:focus {
-      outline: none;
-      border-color: #0281d4;
-      box-shadow: 0 0 0 3px rgba(2, 129, 212, 0.1);
-    }
+    /* Case selector removed in external calendar */
     
     /* Phase indicator styling */
     .phase-indicator {
@@ -496,6 +530,27 @@ $cases_json = json_encode($cases);
       .fc .fc-toolbar-chunk:nth-child(3){ order:3; }
     }
     
+    /* Remove calendar grid lines (match resident) */
+    .fc-theme-standard .fc-scrollgrid,
+    .fc-theme-standard .fc-scrollgrid thead tr,
+    .fc-theme-standard .fc-scrollgrid tbody tr,
+    .fc-theme-standard td,
+    .fc-theme-standard th {
+      border: 0 !important;
+    }
+    .fc .fc-scrollgrid { border: 0 !important; }
+    .fc .fc-col-header, .fc .fc-col-header-cell { border: 0 !important; }
+    .fc .fc-daygrid-day,
+    .fc .fc-daygrid-day-frame,
+    .fc .fc-daygrid-day-top,
+    .fc .fc-daygrid-day-bg { border: 0 !important; }
+    .fc .fc-timegrid-slot,
+    .fc .fc-timegrid-axis,
+    .fc .fc-timegrid-divider,
+    .fc .fc-timegrid-slot-label { border: 0 !important; }
+    /* Keep today highlight and event cards visible despite removed lines */
+    .fc .fc-daygrid-day.fc-day-today { box-shadow: 0 2px 8px 0 rgba(2, 129, 212, 0.08); }
+    
 </style>
 </head>
 <body class="bg-white min-h-screen flex flex-col items-center justify-start py-10 px-4">
@@ -518,10 +573,24 @@ $cases_json = json_encode($cases);
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const rawEvents = <?= $events_json ?>;
-    const casesData = <?= $cases_json ?>;
+  const rawEvents = <?= $events_json ?>;
+  
+  // Build a set of dates (YYYY-MM-DD) with at least one hearing
+  const hearingDateSet = new Set();
+  (rawEvents || []).forEach(ev => {
+    if (ev && ev.type === 'hearing' && ev.start) {
+      const d = new Date(ev.start);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      hearingDateSet.add(`${y}-${m}-${day}`);
+    }
+  });
 
-    const fcEvents = rawEvents.map(ev => {
+  const fcEvents = rawEvents
+    // In case any legacy case events slip in, filter to only hearings
+    .filter(ev => ev.type === 'hearing')
+    .map(ev => {
         const base = {
             id: ev.id,
             title: ev.title,
@@ -531,40 +600,58 @@ document.addEventListener('DOMContentLoaded', function() {
             extendedProps: {}
         };
 
-        if (ev.type === 'case') {
-            base.extendedProps = {
-                type: 'case',
-                case_title: ev.case_title || ev.title,
-                case_status: ev.case_status || ev.case_status,
-                date_opened: ev.date_opened || ev.start,
-                days_left: ev.days_left,
-                days_passed: ev.days_passed,
-                current_phase: ev.current_phase || 'mediation',
-                phase_color: ev.phase_color || '#facc15',
-                phase_icon: ev.phase_icon || '',
-                phase_days_left: ev.phase_days_left || 15
-            };
-        } else {
-            base.extendedProps = {
-                type: 'hearing',
-                description: ev.description || '',
-                sdate: ev.sdate || '',
-            };
-            if (ev.end) base.end = ev.end;
-            base.display = 'block';
-        }
+    base.extendedProps = {
+      type: 'hearing',
+      description: ev.description || '',
+      sdate: ev.sdate || '',
+    };
+    if (ev.end) base.end = ev.end;
+    base.display = 'block';
         return base;
-    });
+  });
 
     const calendarEl = document.getElementById('calendar');
   const calendar = new FullCalendar.Calendar(calendarEl, {
-        eventDidMount: function(info) {
-            if(info.event.extendedProps.type === 'hearing') {
-                const timeEl = info.el.querySelector('.fc-event-time');
-                if(timeEl) timeEl.style.display = 'none';
-            }
-        },
+    noEventsText: 'No hearings scheduled for this period',
+    eventClassNames: function(arg){
+      if (arg.event.extendedProps && arg.event.extendedProps.type === 'hearing') {
+        if (!arg.view.type.startsWith('list')) return ['evt-hearing'];
+      }
+      return [];
+    },
+    eventContent: function(arg){
+      const isList = arg.view.type.startsWith('list');
+      if (arg.event.extendedProps && arg.event.extendedProps.type === 'hearing') {
+        const title = escapeHtml(arg.event.title || 'Hearing');
+        if (isList) {
+          // Explicitly show hearing title in List view
+          return { html: `<span class="font-semibold text-slate-900">${title}</span>` };
+        }
+        // Icon-only in Month/Week with hover tooltip
+        return { html: `<span class="hearing-icon" title="${title}" aria-label="${title}"><i class="fas fa-gavel"></i></span>` };
+      }
+      return undefined;
+    },
+    eventDidMount: function(info) {
+      if (info.event.extendedProps.type === 'hearing') {
+        const timeEl = info.el.querySelector('.fc-event-time');
+        const isMonth = info.view && info.view.type && info.view.type.startsWith('dayGrid');
+        if (timeEl) timeEl.style.display = isMonth ? 'none' : '';
+      }
+    },
         initialView: 'dayGridMonth',
+    dayCellClassNames: function(arg){
+      const d = arg.date;
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      if (hearingDateSet.has(key)) return ['has-hearing'];
+      return [];
+    },
+    dayHeaderClassNames: function(arg){
+      const d = arg.date; if (!d) return [];
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      if (hearingDateSet.has(key)) return ['has-hearing-header'];
+      return [];
+    },
     headerToolbar: {
             left: 'prev,next',
             center: 'title',
@@ -573,56 +660,23 @@ document.addEventListener('DOMContentLoaded', function() {
   views: { dayGridMonth:{ buttonText:'Month' }, timeGridWeek:{ buttonText:'Week' }, listMonth:{ buttonText:'List' } },
         events: fcEvents,
         height: 650,
-        eventClick: function(info) {
+    eventClick: function(info) {
             const e = info.event;
             const p = e.extendedProps;
             const modal = document.getElementById('eventModal');
             const title = document.getElementById('modalTitle');
             const content = document.getElementById('modalContent');
 
-            title.textContent = e.title;
-            if (p.type === 'case') {
-                content.innerHTML = `
-                    <p class="mb-2"><strong class="text-gray-700">Complaint Title:</strong> <span class="text-indigo-600">${escapeHtml(p.case_title)}</span></p>
-                    <p class="mb-2"><strong class="text-gray-700">Status:</strong> <span class="px-2 py-1 rounded-full text-xs font-medium ${getStatusClass(p.case_status)}">${escapeHtml(p.case_status)}</span></p>
-                    <p class="mb-2"><strong class="text-gray-700">Date Opened:</strong> <span class="text-gray-800">${escapeHtml(p.date_opened)}</span></p>
-                    
-                    <div class="mb-3 p-3 rounded-lg border border-gray-200 bg-gray-50">
-                        <div class="flex items-center gap-2 mb-2">
-                            <span class="text-2xl">${p.phase_icon}</span>
-                            <div>
-                                <strong class="text-gray-700">Current Phase:</strong> 
-                                <span class="px-2 py-1 rounded-full text-xs font-medium capitalize" style="background-color: ${p.phase_color}20; color: ${p.phase_color}; border: 1px solid ${p.phase_color}40;">${escapeHtml(p.current_phase)}</span>
-                            </div>
-                        </div>
-                        <p class="text-sm text-gray-600">Phase Days Left: <strong>${p.phase_days_left}</strong> days</p>
-                    </div>
-                    
-                    <div class="flex justify-between items-center mt-3 border-t pt-3 border-gray-100">
-                        <div>
-                            <strong class="text-gray-700">Days Passed:</strong> 
-                            <span class="text-gray-800">${p.days_passed}</span>
-                        </div>
-                        <div>
-                            <strong class="text-gray-700">Days Left:</strong> 
-                            <span class="text-gray-800">${p.days_left}</span>
-                        </div>
-                    </div>
-                    <div class="w-full bg-gray-200 rounded-full h-2 mt-2 overflow-hidden">
-                        <div class="bg-indigo-500 h-2 rounded-full" style="width: ${Math.min(100, (p.days_passed / 45) * 100)}%"></div>
-                    </div>
-                `;
-            } else {
-                content.innerHTML = `
-                    <p class="mb-2"><strong class="text-gray-700">Hearing Title:</strong> <span class="text-indigo-600">${escapeHtml(e.title)}</span></p>
-                    <p class="mb-2"><strong class="text-gray-700">Start:</strong> <span class="text-gray-800">${moment(e.start).format('MMMM D, YYYY h:mm A')}</span></p>
-                    <p class="mb-2"><strong class="text-gray-700">Remarks:</strong> <span class="text-gray-800">${escapeHtml(p.description)}</span></p>
-                    <div class="flex items-center mt-4">
-                        <div class="w-2 h-2 bg-indigo-500 rounded-full mr-2"></div>
-                        <span class="text-xs text-gray-500">Tap anywhere outside to close</span>
-                    </div>
-                `;
-            }
+      title.textContent = e.title;
+      content.innerHTML = `
+        <p class="mb-2"><strong class="text-gray-700">Hearing Title:</strong> <span class="text-indigo-600">${escapeHtml(e.title)}</span></p>
+        <p class="mb-2"><strong class="text-gray-700">Start:</strong> <span class="text-gray-800">${moment(e.start).format('MMMM D, YYYY h:mm A')}</span></p>
+        <p class="mb-2"><strong class="text-gray-700">Remarks:</strong> <span class="text-gray-800">${escapeHtml(p.description)}</span></p>
+        <div class="flex items-center mt-4">
+          <div class="w-2 h-2 bg-indigo-500 rounded-full mr-2"></div>
+          <span class="text-xs text-gray-500">Tap anywhere outside to close</span>
+        </div>
+      `;
             // Add animation to modal
             modal.classList.remove('hidden');
             const modalContent = modal.querySelector('.relative');
@@ -637,81 +691,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Render calendar (no icon injection; show text labels)
     calendar.render();
 
-    const toolbar = document.querySelector('.fc-toolbar'); 
-    const extras = document.createElement('div');
-    extras.id = 'calendarHeaderExtras';
-    extras.className = 'w-full flex flex-wrap items-center gap-3 mt-2';
-
-    const caseWrapper = document.createElement('div');
-    caseWrapper.id = 'caseWrapper';
-    caseWrapper.className = 'flex items-center gap-2';
-    extras.appendChild(caseWrapper);
-
-    const statusWrapper = document.createElement('div');
-    statusWrapper.id = 'caseStatusMini';
-    statusWrapper.className = 'ml-2';
-    extras.appendChild(statusWrapper);
-
-    if (toolbar && toolbar.parentNode) {
-        toolbar.parentNode.insertBefore(extras, toolbar.nextSibling);
-    } else {
-        document.getElementById('calendarContainer').insertBefore(extras, calendarEl);
-    }
-
-    function statusBgColor(status) {
-        if (!status) return 'bg-gray-100 text-gray-800';
-        const s = status.toString().toLowerCase();
-        if (s === 'resolved') return 'bg-green-100 text-green-800';
-        if (s === 'closed') return 'bg-red-100 text-red-800';
-        if (s === 'pending') return 'bg-yellow-100 text-yellow-800';
-        if (s === 'mediation') return 'bg-yellow-100 text-orange-800';
-        if (s === 'open') return 'bg-blue-100 text-blue-800';
-        return 'bg-gray-100 text-gray-800';
-    }
-
-    const selectableCases = casesData.filter(c => c.Case_Status.toLowerCase() !== 'resolved');
-
-    if (selectableCases.length === 0) {
-        caseWrapper.innerHTML = `<div class="text-sm text-gray-500">No active cases</div>`;
-        statusWrapper.innerHTML = '';
-    } else if (selectableCases.length === 1) {
-        const c = selectableCases[0];
-        caseWrapper.innerHTML = `
-            <div class="px-3 py-1 rounded-lg ${statusBgColor(c.Case_Status)} text-xs flex items-center gap-2 transition-all duration-300 hover:shadow-md status-indicator backdrop-blur-sm border border-gray-200">
-                <span>Status: ${escapeHtml(c.Case_Status)}</span>
-                <span>• Days Passed: ${c.Days_Passed} • Days Left: ${c.Days_Left}</span>
-            </div>
-        `;
-    } else {
-        const sel = document.createElement('select');
-        sel.id = 'caseSelector';
-        sel.className = 'border rounded-lg px-3 py-2 text-sm bg-white/90 backdrop-blur-sm border-blue-200 text-blue-700 font-medium transition-all duration-300 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200';
-
-        selectableCases.forEach(c => {
-            const opt = document.createElement('option');
-            opt.value = c.Case_ID;
-            opt.textContent = c.Complaint_Title;
-            sel.appendChild(opt);
-        });
-        caseWrapper.innerHTML = `<div class="text-sm font-medium">Case:</div>`;
-        caseWrapper.appendChild(sel);
-
-        const showCaseMini = (caseID) => {
-            const c = casesData.find(x => x.Case_ID == caseID);
-            if (!c) return;
-            statusWrapper.innerHTML = `
-                <div class="px-3 py-1 rounded-lg ${statusBgColor(c.Case_Status)} text-xs flex items-center gap-2 shadow-sm transition-all duration-300 hover:shadow status-indicator backdrop-blur-sm border border-gray-200">
-                    <span>Status: ${escapeHtml(c.Case_Status)}</span>
-                    <span>• Days Passed: ${c.Days_Passed} • Days Left: ${c.Days_Left}</span>
-                </div>`;
-        };
-        sel.addEventListener('change', e => showCaseMini(e.target.value));
-        showCaseMini(sel.value);
-    }
-
-   
-    
-  // Note: legend removed; no undefined legendContainer insertion
+  // Case selector and status mini removed in external calendar
 
     function getStatusClass(status) {
         if (!status) return 'bg-gray-100 text-gray-800';
@@ -776,8 +756,11 @@ document.addEventListener('DOMContentLoaded', function() {
       const w = window.innerWidth;
       const titleEl = document.querySelector('.fc-toolbar-title');
       if (titleEl) {
-        if (!titleEl.dataset.full) { titleEl.dataset.full = titleEl.textContent.trim(); }
-        const full = titleEl.dataset.full;
+        // Always get fresh title from the current FullCalendar view
+        const full = (calendar && calendar.view && calendar.view.title)
+          ? calendar.view.title
+          : titleEl.textContent.trim();
+        titleEl.dataset.full = full;
         if (w < 420) {
           titleEl.textContent = full.length > 20 ? full.slice(0, 17) + '…' : full;
         } else if (w < 560) {
